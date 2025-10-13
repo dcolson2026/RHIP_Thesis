@@ -42,11 +42,14 @@ CBAR_PDG = {-4} # cbar quark
 
 # Create a ROOT histogram
 h1_all_ccbar_delta_phi = ROOT.TH1F("h1_all_ccbar_delta_phi", "#Delta#phi Correlation: c - cbar quarks; #Delta#phi (radians); Counts", 30, -PI/2, 3*PI/2)
+h2_last_c_pdg = ROOT.TH1F("h2_last_c_pdg", "Last charm descendant PDG; PDG ID; Counts", 2001, -1000.5, 1000.5)
+h3_last_cbar_pdg = ROOT.TH1F("h3_last_cbar_pdg", "Last anti-charm descendant PDG; PDG ID; Counts", 2001, -1000.5, 1000.5)
+h4_last_ccbar_delta_phi = ROOT.TH1F("h4_last_ccbar_delta_phi", "#Delta#phi: Last charm vs last anti-charm descendant; #Delta#phi (radians); Counts", 30, -PI/2, 3*PI/2)
 
 # Loop over all events
 m_events = tree.GetEntries()
 print(m_events, "events")
-for i in range(50000): # m_entries, edit to look at single event
+for i in range(m_events): # m_entries, edit to look at single event
     ccbar_pair_count = 0
     ccbar_hadron_daughters = 0
     if i % 10000 == 0:
@@ -138,22 +141,50 @@ for i in range(50000): # m_entries, edit to look at single event
             following_charm_dfs(j, pdg, daughter_1, daughter_2, cbar_quark_daughter_indices_list)
             following_charm_dfs(j+1, pdg, daughter_1, daughter_2, c_quark_daughter_indices_list)
         ### you are now exiting the particle loop. welcome to event loop, population: you
-    
+
     if len(c_quark_daughter_indices_list) != 0 or len(cbar_quark_daughter_indices_list) != 0:
-        print(len(c_quark_daughter_indices_list))
-        print(len(cbar_quark_daughter_indices_list))
+        print(len(c_quark_daughter_indices_list), c_quark_daughter_indices_list)
+        print(len(cbar_quark_daughter_indices_list), cbar_quark_daughter_indices_list)
+        print()
+    
+    if c_quark_daughter_indices_list:
+        last_c_index = c_quark_daughter_indices_list[-1]
+        if 0 <= last_c_index < n_particles:
+            h2_last_c_pdg.Fill(pdg[last_c_index])
+            # if pdg[last_c_index] == 4:
+                # print(daughter_1[last_c_index], daughter_2[last_c_index])
+                # print("weak?", pdg[daughter_1[last_c_index]])
+
+    if cbar_quark_daughter_indices_list:
+        last_cbar_index = cbar_quark_daughter_indices_list[-1]
+        if 0 <= last_cbar_index < n_particles:
+            h3_last_cbar_pdg.Fill(pdg[last_cbar_index])
+
+    if c_quark_daughter_indices_list and cbar_quark_daughter_indices_list:
+        last_c_index = c_quark_daughter_indices_list[-1]
+        last_cbar_index = cbar_quark_daughter_indices_list[-1]
+        if 0 <= last_c_index < n_particles and 0 <= last_cbar_index < n_particles:
+            last_c_phi = calphi(y_momentum=py[last_c_index], x_momentum=px[last_c_index])
+            last_cbar_phi = calphi(y_momentum=py[last_cbar_index], x_momentum=px[last_cbar_index])
+            h4_last_ccbar_delta_phi.Fill(caldeltaphi(last_c_phi, last_cbar_phi))
     
 
 
 # Style for ROOT histogram
 # h1_delta_phi.SetLineColor(ROOT.kBlue)
 h1_all_ccbar_delta_phi.SetLineWidth(2)
+h2_last_c_pdg.SetLineWidth(2)
+h3_last_cbar_pdg.SetLineWidth(2)
+h4_last_ccbar_delta_phi.SetLineWidth(2)
 
 # Save the histogram as a ROOT file
-output_file = ROOT.TFile("/home/daniel/LibraFiles/CleanThesis/RootOutputs/09_30_2025_following_charm.root", "RECREATE")
+output_file = ROOT.TFile("/home/daniel/LibraFiles/CleanThesis/RootOutputs/10_07_2025_following_charm_1.root", "RECREATE")
 
 # Write out all histograms
 h1_all_ccbar_delta_phi.Write()
+h2_last_c_pdg.Write()
+h3_last_cbar_pdg.Write()
+h4_last_ccbar_delta_phi.Write()
 
 
 output_file.Close()

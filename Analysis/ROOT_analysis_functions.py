@@ -1,5 +1,5 @@
 from functools import lru_cache
-
+import time
 import numpy as np
 from particle import Particle
 PI = np.pi
@@ -82,18 +82,30 @@ def following_charm_dfs(initial_particle_index: int, pdg_list: list[int], daught
     daughter_1_pdg = pdg_list[daughter_1_index] if daughter_1_index else 0
     daughter_2_pdg = pdg_list[daughter_2_index] if daughter_2_index else 0
 
-    # returns if this is a final state particle that undergoes no more decays or interactions
+    # returns if this is a final state particle that undergoes no more decays or interactions ie no daughters
     if daughter_1_index == daughter_2_index == 0:
         return
-    # in this case, there is only one daughter particle
-    elif daughter_1_index == daughter_2_index:
+    # in this case, there is only one daughter particle. exact copy but with changed momentum eg in shower
+    elif 0 < daughter_1_index == daughter_2_index:
         if _pdg_has_charm(daughter_1_pdg):
             ordered_charm_daughters_of_initial_list.append(daughter_1_index)
             following_charm_dfs(daughter_1_index, pdg_list, daughter_1_list, daughter_2_list, ordered_charm_daughters_of_initial_list)
-    else:
-        if daughter_1_index != 0 and _pdg_has_charm(daughter_1_pdg):
-            ordered_charm_daughters_of_initial_list. append(daughter_1_index)
+    elif daughter_1_index > 0 and daughter_2_index == 0:
+        if _pdg_has_charm(daughter_1_pdg):
+            ordered_charm_daughters_of_initial_list.append(daughter_1_index)
             following_charm_dfs(daughter_1_index, pdg_list, daughter_1_list, daughter_2_list, ordered_charm_daughters_of_initial_list)
-        if daughter_2_index != 0 and _pdg_has_charm(daughter_2_pdg):
+    # list of daughters case
+    elif 0 < daughter_1_index < daughter_2_index:
+        for i in range(daughter_1_index, daughter_2_index + 1):
+            if _pdg_has_charm(pdg_list[i]):
+                ordered_charm_daughters_of_initial_list.append(i)
+                following_charm_dfs(i, pdg_list, daughter_1_list, daughter_2_list, ordered_charm_daughters_of_initial_list)
+    # two separate decays, not a list. check individually
+    elif 0 < daughter_2_index < daughter_1_index:
+        if _pdg_has_charm(daughter_1_pdg):
+            ordered_charm_daughters_of_initial_list.append(daughter_1_index)
+            following_charm_dfs(daughter_1_index, pdg_list, daughter_1_list, daughter_2_list, ordered_charm_daughters_of_initial_list)
+        if _pdg_has_charm(daughter_2_pdg):
             ordered_charm_daughters_of_initial_list.append(daughter_2_index)
             following_charm_dfs(daughter_2_index, pdg_list, daughter_1_list, daughter_2_list, ordered_charm_daughters_of_initial_list)
+
