@@ -28,7 +28,7 @@ MULT_CLASSES_HI = [23.4, 51.1, 300] # was 128.6 but upper bound should not matte
 
 # fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_9M_events.root"
 # fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root"
-fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_1M_heavyion_events.root"
+fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"
 
 if "MB" in fpath:
     file_type = "MB"
@@ -36,7 +36,7 @@ if "MB" in fpath:
 elif "hard" in fpath:
     file_type = "hard"
     mult_edges = MULT_CLASSES_HARD
-elif "HI" in fpath:
+elif "heavyion" in fpath:
     file_type = "HI"
     mult_edges = MULT_CLASSES_HI
 else:
@@ -355,17 +355,18 @@ for i in range(m_events): # m_entries, edit to look at single event
             y_momentum=py[last_cbar_index]
         )
 
-        # Require BOTH D0 and anti-D0 to be in the same pT class
+        # No longer require BOTH D0 and anti-D0 to be in the same pT class...
         pt_label_c = get_bin_label(last_c_pT, PT_BINS)
         pt_label_cbar = get_bin_label(last_cbar_pT, PT_BINS)
 
         if pt_label_c is None or pt_label_cbar is None:
             continue
 
-        if pt_label_c != pt_label_cbar:
-            continue
+        # ... because we commented this part out
+        # if pt_label_c != pt_label_cbar:
+        #     continue
 
-        pt_label = pt_label_c
+        pt_label = (pt_label_c, pt_label_cbar)
 
         # delta phi
         last_c_phi = calphi(
@@ -379,9 +380,14 @@ for i in range(m_events): # m_entries, edit to look at single event
         last_descendants_dphi = caldeltaphi(last_c_phi, last_cbar_phi)
 
         # Fill only the relevant 1 of the 9 histograms
-        h_dihadron_dphi[(pt_label, mult_label)].Fill(last_descendants_dphi)
+        # h_dihadron_dphi[(pt_label, mult_label)].Fill(last_descendants_dphi)
 
-        pair_key = (pdg[last_c_index], pdg[last_cbar_index], pt_label, mult_label) # most likely this will error
+        pair_key = (
+            pdg[last_c_index], 
+            pdg[last_cbar_index], 
+            pt_label_c, 
+            pt_label_cbar,
+            mult_label) # most likely this will error
         # pair_key = (pdg[last_c_index], pdg[last_cbar_index])
         large_dict.setdefault(pair_key, []).append(last_descendants_dphi)
 
@@ -391,17 +397,18 @@ pair_histograms = []
 pair_fit_functions = []
 pair_fit_labels = []
 pair_fit_annotations = []
-for (pdg_from_c, pdg_from_cbar, pt_label, mult_label), delta_phi_values in large_dict.items():
-    hist_name = f"h_delta_phi_{pdg_from_c}_{pdg_from_cbar}_{pt_label}_{mult_label}"
+for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_phi_values in large_dict.items():
+    hist_name = f"h_delta_phi_{pdg_from_c}_{pdg_from_cbar}_{pt_label_c}_{pt_label_cbar}_{mult_label}"
     c_name = getParticleName(pdg_from_c)
     cbar_name = getParticleName(pdg_from_cbar)
     # hist_title = f"#Delta#phi: D^{{0}}- #bar{{D}}^{{0}}; #Delta#phi (rad); D^{{0}}- #bar{{D}}^{{0}} pairs / bin"
     # hist_title = f"#Delta#phi: {c_name} vs {cbar_name}; #Delta#phi (radians); Counts"
     hist_title = (
-        f"#Delta#phi: {c_name} vs {cbar_name}, "
-        f"{pt_pretty[pt_label]}, {mult_pretty[mult_label]};"
+        f"#Delta#phi: D^{{0}} ({pt_pretty[pt_label_c]}) vs "
+        f"#bar{{D}}^{{0}} ({pt_pretty[pt_label_cbar]}), "
+        f"{mult_pretty[mult_label]};"
         f"#Delta#phi (radians);Counts"
-    )
+        )
     hist = ROOT.TH1F(hist_name, hist_title, 30, -PI/2, 3*PI/2)
     for value in delta_phi_values:
         hist.Fill(value)
