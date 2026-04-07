@@ -2,6 +2,7 @@ import ROOT
 import time
 import numpy as np
 from particle import Particle
+from datetime import date
 from ROOT_analysis_functions import (
     caldeltaphi,
     # particle_lineage_dfs,
@@ -12,17 +13,71 @@ from ROOT_analysis_functions import (
     caleta,
     following_charm_dfs,
     fit_von_mises_region,
-    is_charged_pdg
+    is_charged_pdg,
+    get_bin_label
 )
+start_time = time.perf_counter()
+today = date.today()
 
 PI = np.pi
 
-MULT_FLOOR = 60 # USER INPUT
-MULT_CEILING = 200 # USER INPUT
+MULT_CLASSES_MB = [7.9, 19.6, 300] # was 65.7 but upper bound should not matter
+MULT_CLASSES_HARD = [29.2, 46.3, 300] # was 90.2 but upper bound should not matter
+MULT_CLASSES_HI = [23.4, 51.1, 300] # was 128.6 but upper bound should not matter
 
 
+# fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_9M_events.root"
+# fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root"
+fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_1M_heavyion_events.root"
+
+if "MB" in fpath:
+    file_type = "MB"
+    mult_edges = MULT_CLASSES_MB
+elif "hard" in fpath:
+    file_type = "hard"
+    mult_edges = MULT_CLASSES_HARD
+elif "HI" in fpath:
+    file_type = "HI"
+    mult_edges = MULT_CLASSES_HI
+else:
+    raise ValueError(f"Could not determine file type from fpath: {fpath}")
+PT_BINS = [
+    ("low_pT", 0.0, 2.0),
+    ("mid_pT", 2.0, 4.0),
+    ("high_pT", 4.0, 8.0),
+]
+MULT_BINS = [
+    ("low_mult", 0.0, mult_edges[0]),
+    ("mid_mult", mult_edges[0], mult_edges[1]),
+    ("high_mult", mult_edges[1], mult_edges[2]),
+]
+h_dihadron_dphi = {}
+for mult_label, mult_lo, mult_hi in MULT_BINS:
+    for pt_label, pt_lo, pt_hi in PT_BINS:
+        hname = f"h_dphi_D0antiD0_{pt_label}_{mult_label}"
+        htitle = (
+            f"#Delta#phi of D^{{0}}-#bar{{D}}^{{0}} pairs "
+            f"({pt_label}, {mult_label});"
+            f"#Delta#phi [rad];Counts"
+        )
+        hist = ROOT.TH1F(hname, htitle, 64, -ROOT.TMath.Pi()/2, 3*ROOT.TMath.Pi()/2)
+        hist.Sumw2()
+        h_dihadron_dphi[(pt_label, mult_label)] = hist
+pt_pretty = {
+    "low_pT": "0 < p_{T} #leq 2 GeV",
+    "mid_pT": "2 < p_{T} #leq 4 GeV",
+    "high_pT": "4 < p_{T} #leq 8 GeV",
+}
+
+mult_pretty = {
+    "low_mult": "low multiplicity",
+    "mid_mult": "mid multiplicity",
+    "high_mult": "high multiplicity",
+}
+
+outpath = f"/home/daniel/LibraFiles/CleanThesis/RootOutputs/{today.month}_{today.day}_{today.year}_thesis_{file_type}.root"
 # Open the ROOT file
-root_file = ROOT.TFile("/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_9M_events.root", "READ") # USER INPUT
+root_file = ROOT.TFile(fpath, "READ") # USER INPUT
 #root_file = ROOT.TFile("pythia_100_events_pT_hard.root", "READ")
 tree = root_file.Get("events") # fetches the tree
 
@@ -57,17 +112,23 @@ CBAR_PDG = {-4} # cbar quark
 
 # Create a ROOT histogram
 # dphi of c-cbar initial pair, pdg of last c descendant that still has charm, same for cbar, dphi of those 2
-h1_all_ccbar_delta_phi = ROOT.TH1F("h1_all_ccbar_delta_phi", "#Delta#phi Correlation: c - cbar quarks; #Delta#phi (radians); Counts", 30, -PI/2, 3*PI/2)
-h2_last_c_pdg = ROOT.TH1F("h2_last_c_pdg", "Last charm descendant PDG; PDG ID; Counts", 2001, -1000.5, 1000.5)
-h3_last_cbar_pdg = ROOT.TH1F("h3_last_cbar_pdg", "Last anti-charm descendant PDG; PDG ID; Counts", 2001, -1000.5, 1000.5)
-h4_last_ccbar_delta_phi = ROOT.TH1F("h4_last_ccbar_delta_phi", "#Delta#phi: Last charm vs last anti-charm descendant; #Delta#phi (radians); Counts", 30, -PI/2, 3*PI/2)
+h1_all_ccbar_delta_phi = ROOT.TH1F("h1_all_ccbar_delta_phi", "Initial c-#bar{c} Pairs Correlation; #Delta#phi (radians); Counts", 30, -PI/2, 3*PI/2)
+h2_last_c_pdg = ROOT.TH1F("h2_last_c_pdg", "PDG of Last Charmed Descendant of c; PDG ID; Counts", 2001, -1000.5, 1000.5)
+h3_last_cbar_pdg = ROOT.TH1F("h3_last_cbar_pdg", "PDG of Last Charmed Descendant of #bar{c}; PDG ID; Counts", 2001, -1000.5, 1000.5)
+h4_last_ccbar_delta_phi = ROOT.TH1F("h4_last_ccbar_delta_phi", "Last Charmed Descendant of c - Last Charmed Descendant of #bar{c} Correlation; #Delta#phi (radians); Counts", 30, -PI/2, 3*PI/2)
+
 # now look at object that fills h2 and h3. get more specific and make pdg and pT and eta cuts
-h5_last_c_descendant_D0_pT = ROOT.TH1F("h5", "Last charm descendant: pT of D0", 50, 0, 20)
-h6_last_cbar_descendant_D0_pT = ROOT.TH1F("h6", "Last anti-charm descendant: pT of anti-D0", 50, 0, 20)
+# h5_last_c_descendant_D0_pT = ROOT.TH1F("h5", "Last charm descendant: pT of D0", 50, 0, 20)
+# h6_last_cbar_descendant_D0_pT = ROOT.TH1F("h6", "Last anti-charm descendant: pT of anti-D0", 50, 0, 20)
 # low, med, high momentum D0 dphi
-h7_low_pT_D0_descendants_dphi = ROOT.TH1F("h7", "#Delta#phi D0 (0 <= pT <= 2)", 30, -PI/2, 3*PI/2)
-h8_med_pT_D0_descendants_dphi = ROOT.TH1F("h8", "#Delta#phi D0 (2 < pT <= 4)", 30, -PI/2, 3*PI/2)
-h9_high_pT_D0_descendants_dphi = ROOT.TH1F("h9", "#Delta#phi D0 (4 < pT)", 30, -PI/2, 3*PI/2)
+h5_D0_pT_dist = ROOT.TH1F("h5_D0_pT_dist", "p_{T} of D^{0};p_{T}(D^{0}) [GeV], Counts", 50, 0, 8)
+h6_antiD0_pT_dist = ROOT.TH1F("h6_antiD0_pT_dist", "p_{T} of #bar{D}^{0};p_{T}(#bar{D}^{0}) [GeV], Counts", 50, 0, 8)
+
+# h7_low_pT_D0_descendants_dphi = ROOT.TH1F("h7", "#Delta#phi D0 (0 <= pT <= 2)", 30, -PI/2, 3*PI/2)
+# h8_med_pT_D0_descendants_dphi = ROOT.TH1F("h8", "#Delta#phi D0 (2 < pT <= 4)", 30, -PI/2, 3*PI/2)
+# h9_high_pT_D0_descendants_dphi = ROOT.TH1F("h9", "#Delta#phi D0 (4 < pT <= 8)", 30, -PI/2, 3*PI/2)
+
+
 
 h10_D0_vs_antiD0_pT = ROOT.TH2F(
     "h10_D0_vs_antiD0_pT",
@@ -80,7 +141,7 @@ large_dict = {}
 # Loop over all events
 m_events = tree.GetEntries()
 print(m_events, "events in total")
-for i in range(1000000): # m_entries, edit to look at single event
+for i in range(m_events): # m_entries, edit to look at single event
     ccbar_pair_count = 0
     ccbar_hadron_daughters = 0
     if i % 1000 == 0:
@@ -138,11 +199,16 @@ for i in range(1000000): # m_entries, edit to look at single event
         daughter_2_pdg = pdg[daughter_2_index]
         daughter_1_status = status[daughter_1_index]
         daughter_2_status = status[daughter_2_index]
-        if is_charged_pdg(particle_pdg) and particle_status > 0:
+
+        # filling the simple D0 and anti D0 pT histograms
+        if particle_pdg == 421:
+            h5_D0_pT_dist.Fill(particle_pT)
+        elif particle_pdg == -421:
+            h6_antiD0_pT_dist.Fill(particle_pT)
+
+        if is_charged_pdg(particle_pdg) and particle_status > 0 and np.abs(particle_eta) < 1:
             temp_mult += 1
 
-        
-        
         # if we have a c or cbar, check the status of its daughter. if its a primary hadron from hadronization, fill
         if pdg[j] in C_PDG:
             if 81 <= np.abs(daughter_1_status) <= 89:
@@ -192,7 +258,7 @@ for i in range(1000000): # m_entries, edit to look at single event
         if 0 <= last_c_descendant_index < n_particles:
             h2_last_c_pdg.Fill(last_c_descendant_pdg)
             if last_c_descendant_pdg == 421:
-                h5_last_c_descendant_D0_pT.Fill(last_c_descendant_pT)
+                # h5_last_c_descendant_D0_pT.Fill(last_c_descendant_pT)
                 temp_D0_antiD0[0] = True
 
             # if pdg[last_c_index] == 4:
@@ -209,7 +275,7 @@ for i in range(1000000): # m_entries, edit to look at single event
         if 0 <= last_cbar_descendant_index < n_particles:
             h3_last_cbar_pdg.Fill(last_cbar_descendant_pdg)
             if last_cbar_descendant_pdg == -421:
-                h6_last_cbar_descendant_D0_pT.Fill(last_cbar_descendant_pT)
+                # h6_last_cbar_descendant_D0_pT.Fill(last_cbar_descendant_pT)
                 temp_D0_antiD0[1] = True
     
     # if no False, then we have D0 and antiD0. then just add pT's
@@ -218,34 +284,106 @@ for i in range(1000000): # m_entries, edit to look at single event
 
 
     # if both lists exist, do a dihadron distribution i guess
+    # if c_quark_daughter_indices_list and cbar_quark_daughter_indices_list:
+    #     last_c_index = c_quark_daughter_indices_list[-1]
+    #     last_cbar_index = cbar_quark_daughter_indices_list[-1]
+    #     if 0 <= last_c_index < n_particles and 0 <= last_cbar_index < n_particles:
+    #         last_c_eta = caleta(x_momentum=px[last_c_index], y_momentum=py[last_c_index], z_momentum=pz[last_c_index])
+    #         last_cbar_eta = caleta(x_momentum=px[last_cbar_index], y_momentum=py[last_cbar_index], z_momentum=pz[last_cbar_index])
+    #         if np.abs(last_c_eta) > 1 or np.abs(last_cbar_eta) > 1: 
+    #             # print("not in detector visibility, cya!")
+    #             continue
+    #         if MULT_FLOOR < temp_mult <= MULT_CEILING:
+    #             # only look at certain multiplicity range!
+    #             continue
+    #         last_c_pT = calpT(x_momentum=px[last_c_index], y_momentum=py[last_c_index])
+    #         last_cbar_pT = calpT(x_momentum=px[last_cbar_index], y_momentum=py[last_cbar_index])
+
+    #         last_c_phi = calphi(y_momentum=py[last_c_index], x_momentum=px[last_c_index])
+    #         last_cbar_phi = calphi(y_momentum=py[last_cbar_index], x_momentum=px[last_cbar_index])
+    #         last_descendants_dphi = caldeltaphi(last_c_phi, last_cbar_phi)
+    #         h4_last_ccbar_delta_phi.Fill(last_descendants_dphi)
+    #         pair_key = (pdg[last_c_index], pdg[last_cbar_index])
+    #         large_dict.setdefault(pair_key, []).append(last_descendants_dphi)
+    #         # if last_c_descendant_pdg == 421 and last_cbar_descendant_pdg == -421:
+    #         #     if 0 <= last_c_descendant_pT <= 2 and 0 <= last_cbar_descendant_pT <= 2:
+    #         #         h7_low_pT_D0_descendants_dphi.Fill(last_descendants_dphi)
+    #         #     elif 2 < last_c_descendant_pT <= 4 and 2 < last_cbar_descendant_pT <= 4:
+    #         #         h8_med_pT_D0_descendants_dphi.Fill(last_descendants_dphi)
+    #         #     elif 4 < last_c_descendant_pT and 4 < last_cbar_descendant_pT:
+    #         #         h9_high_pT_D0_descendants_dphi.Fill(last_descendants_dphi)
     if c_quark_daughter_indices_list and cbar_quark_daughter_indices_list:
+
         last_c_index = c_quark_daughter_indices_list[-1]
         last_cbar_index = cbar_quark_daughter_indices_list[-1]
-        if 0 <= last_c_index < n_particles and 0 <= last_cbar_index < n_particles:
-            last_c_eta = caleta(x_momentum=px[last_c_index], y_momentum=py[last_c_index], z_momentum=pz[last_c_index])
-            last_cbar_eta = caleta(x_momentum=px[last_cbar_index], y_momentum=py[last_cbar_index], z_momentum=pz[last_cbar_index])
-            if np.abs(last_c_eta) > 1 or np.abs(last_cbar_eta) > 1: 
-                # print("not in detector visibility, cya!")
-                continue
-            if MULT_FLOOR < temp_mult <= MULT_CEILING:
-                # only look at certain multiplicity range!
-                continue
-            last_c_pT = calpT(x_momentum=px[last_c_index], y_momentum=py[last_c_index])
-            last_cbar_pT = calpT(x_momentum=px[last_cbar_index], y_momentum=py[last_cbar_index])
 
-            last_c_phi = calphi(y_momentum=py[last_c_index], x_momentum=px[last_c_index])
-            last_cbar_phi = calphi(y_momentum=py[last_cbar_index], x_momentum=px[last_cbar_index])
-            last_descendants_dphi = caldeltaphi(last_c_phi, last_cbar_phi)
-            h4_last_ccbar_delta_phi.Fill(last_descendants_dphi)
-            pair_key = (pdg[last_c_index], pdg[last_cbar_index])
-            large_dict.setdefault(pair_key, []).append(last_descendants_dphi)
-            # if last_c_descendant_pdg == 421 and last_cbar_descendant_pdg == -421:
-            #     if 0 <= last_c_descendant_pT <= 2 and 0 <= last_cbar_descendant_pT <= 2:
-            #         h7_low_pT_D0_descendants_dphi.Fill(last_descendants_dphi)
-            #     elif 2 < last_c_descendant_pT <= 4 and 2 < last_cbar_descendant_pT <= 4:
-            #         h8_med_pT_D0_descendants_dphi.Fill(last_descendants_dphi)
-            #     elif 4 < last_c_descendant_pT and 4 < last_cbar_descendant_pT:
-            #         h9_high_pT_D0_descendants_dphi.Fill(last_descendants_dphi)
+        if not (0 <= last_c_index < n_particles and 0 <= last_cbar_index < n_particles):
+            continue
+
+        # Require exact D0 and anti-D0
+        if not (pdg[last_c_index] == 421 and pdg[last_cbar_index] == -421):
+            continue
+
+        # eta acceptance
+        last_c_eta = caleta(
+            x_momentum=px[last_c_index],
+            y_momentum=py[last_c_index],
+            z_momentum=pz[last_c_index]
+        )
+        last_cbar_eta = caleta(
+            x_momentum=px[last_cbar_index],
+            y_momentum=py[last_cbar_index],
+            z_momentum=pz[last_cbar_index]
+        )
+
+        # if np.abs(last_c_eta) > 1 or np.abs(last_cbar_eta) > 1:
+        #     continue
+
+        # multiplicity classification
+        mult_label = get_bin_label(temp_mult, MULT_BINS)
+        if mult_label is None:
+            print("test?", temp_mult)
+            continue
+
+        # pT calculation
+        last_c_pT = calpT(
+            x_momentum=px[last_c_index],
+            y_momentum=py[last_c_index]
+        )
+        last_cbar_pT = calpT(
+            x_momentum=px[last_cbar_index],
+            y_momentum=py[last_cbar_index]
+        )
+
+        # Require BOTH D0 and anti-D0 to be in the same pT class
+        pt_label_c = get_bin_label(last_c_pT, PT_BINS)
+        pt_label_cbar = get_bin_label(last_cbar_pT, PT_BINS)
+
+        if pt_label_c is None or pt_label_cbar is None:
+            continue
+
+        if pt_label_c != pt_label_cbar:
+            continue
+
+        pt_label = pt_label_c
+
+        # delta phi
+        last_c_phi = calphi(
+            y_momentum=py[last_c_index],
+            x_momentum=px[last_c_index]
+        )
+        last_cbar_phi = calphi(
+            y_momentum=py[last_cbar_index],
+            x_momentum=px[last_cbar_index]
+        )
+        last_descendants_dphi = caldeltaphi(last_c_phi, last_cbar_phi)
+
+        # Fill only the relevant 1 of the 9 histograms
+        h_dihadron_dphi[(pt_label, mult_label)].Fill(last_descendants_dphi)
+
+        pair_key = (pdg[last_c_index], pdg[last_cbar_index], pt_label, mult_label) # most likely this will error
+        # pair_key = (pdg[last_c_index], pdg[last_cbar_index])
+        large_dict.setdefault(pair_key, []).append(last_descendants_dphi)
 
 
 
@@ -253,12 +391,17 @@ pair_histograms = []
 pair_fit_functions = []
 pair_fit_labels = []
 pair_fit_annotations = []
-for (pdg_from_c, pdg_from_cbar), delta_phi_values in large_dict.items():
-    hist_name = f"h_delta_phi_{pdg_from_c}_{pdg_from_cbar}"
+for (pdg_from_c, pdg_from_cbar, pt_label, mult_label), delta_phi_values in large_dict.items():
+    hist_name = f"h_delta_phi_{pdg_from_c}_{pdg_from_cbar}_{pt_label}_{mult_label}"
     c_name = getParticleName(pdg_from_c)
     cbar_name = getParticleName(pdg_from_cbar)
     # hist_title = f"#Delta#phi: D^{{0}}- #bar{{D}}^{{0}}; #Delta#phi (rad); D^{{0}}- #bar{{D}}^{{0}} pairs / bin"
-    hist_title = f"#Delta#phi: {c_name} vs {cbar_name}; #Delta#phi (radians); Counts"
+    # hist_title = f"#Delta#phi: {c_name} vs {cbar_name}; #Delta#phi (radians); Counts"
+    hist_title = (
+        f"#Delta#phi: {c_name} vs {cbar_name}, "
+        f"{pt_pretty[pt_label]}, {mult_pretty[mult_label]};"
+        f"#Delta#phi (radians);Counts"
+    )
     hist = ROOT.TH1F(hist_name, hist_title, 30, -PI/2, 3*PI/2)
     for value in delta_phi_values:
         hist.Fill(value)
@@ -333,27 +476,31 @@ h1_all_ccbar_delta_phi.SetLineWidth(2)
 h2_last_c_pdg.SetLineWidth(2)
 h3_last_cbar_pdg.SetLineWidth(2)
 h4_last_ccbar_delta_phi.SetLineWidth(2)
-h5_last_c_descendant_D0_pT.SetLineWidth(2)
-h6_last_cbar_descendant_D0_pT.SetLineWidth(2)
+h5_D0_pT_dist.SetLineWidth(2)
+h6_antiD0_pT_dist.SetLineWidth(2)
 
 # Save the histogram as a ROOT file
-output_file = ROOT.TFile("/home/daniel/LibraFiles/CleanThesis/RootOutputs/02_20_2026_following_charm_high_mult_MB.root", "RECREATE")
+output_file = ROOT.TFile(outpath, "RECREATE")
 
 # Write out all histograms
 h1_all_ccbar_delta_phi.Write()
 h2_last_c_pdg.Write()
 h3_last_cbar_pdg.Write()
 h4_last_ccbar_delta_phi.Write()
-h5_last_c_descendant_D0_pT.Write()
-h6_last_cbar_descendant_D0_pT.Write()
-h7_low_pT_D0_descendants_dphi.Write()
-h8_med_pT_D0_descendants_dphi.Write()
-h9_high_pT_D0_descendants_dphi.Write()
+h5_D0_pT_dist.Write()
+h6_antiD0_pT_dist.Write()
+# h7_low_pT_D0_descendants_dphi.Write()
+# h8_med_pT_D0_descendants_dphi.Write()
+# h9_high_pT_D0_descendants_dphi.Write()
 h10_D0_vs_antiD0_pT.Write()
 for hist in pair_histograms:
     hist.Write()
 for fit_func in pair_fit_functions:
     fit_func.Write()
 
+end_time = time.perf_counter()
+elapsed_time = end_time - start_time
+# Print the result (formatted to 4 decimal places)
+print(f"Program execution time: {elapsed_time:.4f} seconds")
 
 output_file.Close()

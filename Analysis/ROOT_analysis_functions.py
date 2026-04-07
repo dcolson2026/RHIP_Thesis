@@ -1,5 +1,5 @@
 from functools import lru_cache
-import time
+import ROOT
 import numpy as np
 from particle import Particle
 PI = np.pi
@@ -109,3 +109,161 @@ def following_charm_dfs(initial_particle_index: int, pdg_list: list[int], daught
             ordered_charm_daughters_of_initial_list.append(daughter_2_index)
             following_charm_dfs(daughter_2_index, pdg_list, daughter_1_list, daughter_2_list, ordered_charm_daughters_of_initial_list)
 
+_VON_MISES_MIN = 1e-6
+_FIT_RANGE_EPS = 1e-5
+
+
+def _positive_or_min(value: float, default: float) -> float:
+    """Return value if it is reasonably positive, otherwise a safe default."""
+    return value if value > _VON_MISES_MIN else default
+
+
+def create_von_mises_fit(
+    name: str,
+    x_min: float,
+    x_max: float,
+    mu_guess: float,
+    amplitude_guess: float,
+    baseline_guess: float,
+):
+    """Create a von Mises TF1: f(x) = A * exp(kappa cos(x-mu)) + baseline."""
+    import ROOT
+
+    func = ROOT.TF1(
+        name,
+        "[0]*TMath::Exp([2]*TMath::Cos(x-[1])) + [3]",
+        x_min,
+        x_max,
+    )
+
+    amp_init = _positive_or_min(amplitude_guess, 1.0)
+    base_init = _positive_or_min(baseline_guess, 0.1)
+
+    func.SetParNames("Amp", "Mu", "Kappa", "Baseline")
+
+    # Amplitude
+    func.SetParameter(0, amp_init)
+    func.SetParLimits(0, 0.0, max(amp_init * 10.0, 1.0))
+
+    # Mean angle
+    func.SetParameter(1, mu_guess)
+    # +- ~40 degrees is a reasonable prior window
+    func.SetParLimits(1, mu_guess - 0.7, mu_guess + 0.7)
+
+    # Concentration (kappa)
+    func.SetParameter(2, 1.0)
+    func.SetParLimits(2, 0.01, 100.0)
+
+    # Baseline (pedestal)
+    func.SetParameter(3, base_init)
+    func.SetParLimits(3, 0.0, max(base_init * 10.0, 1.0))
+
+    return func
+
+
+def fit_von_mises_region(
+    histogram,
+    fit_name: str,
+    x_min: float,
+    x_max: float,
+    mu_guess: float,
+    line_color: int,
+    min_entries: int = 10,
+):
+    """
+    Fit the provided histogram within a window using a von Mises function.
+
+    Returns (TF1, chi2, ndf) if the fit succeeds, otherwise None.
+    """
+    import ROOT
+
+    axis = histogram.GetXaxis()
+    hist_xmin = axis.GetXmin()
+    hist_xmax = axis.GetXmax()
+
+    fit_xmin = max(x_min, hist_xmin)
+    fit_xmax = min(x_max, hist_xmax)
+
+    if fit_xmax <= fit_xmin:
+        print(f"[von_mises] Bad fit range: {fit_xmin:.3f} – {fit_xmax:.3f}")
+        return None
+
+    low_bin = max(1, axis.FindBin(fit_xmin + _FIT_RANGE_EPS))
+    high_bin = min(axis.FindBin(fit_xmax - _FIT_RANGE_EPS), histogram.GetNbinsX())
+    if high_bin < low_bin:
+        print(f"[von_mises] high_bin < low_bin ({high_bin} < {low_bin})")
+        return None
+
+    entries_in_window = histogram.Integral(low_bin, high_bin)
+    if entries_in_window < min_entries:
+        print(
+            f"[von_mises] Not enough entries in window "
+            f"({entries_in_window} < {min_entries}) for {fit_name}"
+        )
+        return None
+
+    # Crude amplitude & baseline guesses from the local window
+    local_max = 0.0
+    local_sum = 0.0
+    local_bins = 0
+    for bin_idx in range(low_bin, high_bin + 1):
+        content = histogram.GetBinContent(bin_idx)
+        local_max = max(local_max, content)
+        local_sum += content
+        local_bins += 1
+
+    baseline_guess = (local_sum / local_bins) if local_bins else 0.1
+
+    fit = create_von_mises_fit(
+        fit_name,
+        fit_xmin,
+        fit_xmax,
+        mu_guess,
+        local_max,
+        baseline_guess,
+    )
+    fit.SetRange(fit_xmin, fit_xmax)
+    fit.SetLineColor(line_color)
+    fit.SetLineWidth(3)
+    fit.SetNpx(600)
+
+    # "R" = use range, "Q" = quiet, "S" = return fit result
+    fit_status = histogram.Fit(fit, "RQS+", "", fit_xmin, fit_xmax)
+
+    # PyROOT 6: Fit returns a TFitResultPtr with Status()
+    if hasattr(fit_status, "Status"):
+        status = fit_status.Status()
+        if status != 0:
+            print(f"[von_mises] Fit failed for {fit_name}, status = {status}")
+            return None
+    else:
+        # Older ROOT: Fit returns an int
+        if fit_status != 0:
+            print(f"[von_mises] Fit failed for {fit_name}, status = {fit_status}")
+            return None
+
+    chi2 = fit.GetChisquare()
+    ndf = fit.GetNDF()
+    print(
+        f"[von_mises] Fit OK for {fit_name}: "
+        f"chi2/ndf = {chi2:.1f}/{int(ndf) if ndf else 0}"
+    )
+    return fit, chi2, ndf
+
+def is_charged_pdg(pdgid: int) -> bool:
+    pdgDB = ROOT.TDatabasePDG.Instance()
+    part = pdgDB.GetParticle(pdgid)
+    if not part:
+        return False
+    # Charge() returns charge in units of e/3 in ROOT's PDG DB
+    return abs(part.Charge()) > 0.0
+
+def get_bin_label(value, bin_defs):
+    """
+    bin_defs: list of tuples like (label, low_edge, high_edge)
+    returns the matching label or None
+    """
+    for label, lo, hi in bin_defs:
+        if lo < value <= hi:
+            return label
+    return None
