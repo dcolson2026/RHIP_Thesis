@@ -41,10 +41,21 @@ elif "heavyion" in fpath:
     mult_edges = MULT_CLASSES_HI
 else:
     raise ValueError(f"Could not determine file type from fpath: {fpath}")
+# PT_BINS = [
+#     ("low_pT", 0.0, 2.0),
+#     ("mid_pT", 2.0, 4.0),
+#     ("high_pT", 4.0, 8.0),
+# ]
+# make finer pT binning, also change pT_pretty
 PT_BINS = [
-    ("low_pT", 0.0, 2.0),
-    ("mid_pT", 2.0, 4.0),
-    ("high_pT", 4.0, 8.0),
+    ("first_pT", 0.0, 1.0),
+    ("second_pT", 1.0, 2.0),
+    ("third_pT", 2.0, 3.0),
+    ("fourth_pT", 3.0, 4.0),
+    ("fifth_pT", 4.0, 5.0),
+    ("sixth_pT", 5.0, 6.0),
+    ("seventh_pT", 6.0, 7.0),
+    ("eighth_pT", 7.0, 8.0),
 ]
 MULT_BINS = [
     ("low_mult", 0.0, mult_edges[0]),
@@ -64,9 +75,14 @@ for mult_label, mult_lo, mult_hi in MULT_BINS:
         hist.Sumw2()
         h_dihadron_dphi[(pt_label, mult_label)] = hist
 pt_pretty = {
-    "low_pT": "0 < p_{T} #leq 2 GeV",
-    "mid_pT": "2 < p_{T} #leq 4 GeV",
-    "high_pT": "4 < p_{T} #leq 8 GeV",
+    "first_pT": "0 < p_{T} #leq 1 GeV",
+    "second_pT": "1 < p_{T} #leq 2 GeV",
+    "third_pT": "2 < p_{T} #leq 3 GeV",
+    "fourth_pT": "3 < p_{T} #leq 4 GeV",
+    "fifth_pT": "4 < p_{T} #leq 5 GeV",
+    "sixth_pT": "5 < p_{T} #leq 6 GeV",
+    "seventh_pT": "6 < p_{T} #leq 7 GeV",
+    "eighth_pT": "7 < p_{T} #leq 8 GeV",
 }
 
 mult_pretty = {
@@ -76,6 +92,10 @@ mult_pretty = {
 }
 
 outpath = f"/home/daniel/LibraFiles/CleanThesis/RootOutputs/{today.month}_{today.day}_{today.year}_thesis_{file_type}.root"
+width_outpath = (
+    f"/home/daniel/LibraFiles/CleanThesis/RootOutputs/"
+    f"{today.month}_{today.day}_{today.year}_thesis_{file_type}_von_mises_widths.txt"
+)
 # Open the ROOT file
 root_file = ROOT.TFile(fpath, "READ") # USER INPUT
 #root_file = ROOT.TFile("pythia_100_events_pT_hard.root", "READ")
@@ -141,7 +161,7 @@ large_dict = {}
 # Loop over all events
 m_events = tree.GetEntries()
 print(m_events, "events in total")
-for i in range(m_events): # m_entries, edit to look at single event
+for i in range(1000000): # m_entries, edit to look at single event
     ccbar_pair_count = 0
     ccbar_hadron_daughters = 0
     if i % 1000 == 0:
@@ -397,6 +417,7 @@ pair_histograms = []
 pair_fit_functions = []
 pair_fit_labels = []
 pair_fit_annotations = []
+width_rows = []
 for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_phi_values in large_dict.items():
     hist_name = f"h_delta_phi_{pdg_from_c}_{pdg_from_cbar}_{pt_label_c}_{pt_label_cbar}_{mult_label}"
     c_name = getParticleName(pdg_from_c)
@@ -465,9 +486,24 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
         for idx, (label, fit_obj, _, _) in enumerate(fits_for_hist):
             amplitude = fit_obj.GetParameter(0)
             kappa = fit_obj.GetParameter(2)
+            kappa_err = fit_obj.GetParError(2)
             # Convert von Mises concentration into an approximate angular width.
             width = np.sqrt(1.0 / kappa) if kappa > 0 else 0.0
+            width_err = 0.5 * kappa_err / (kappa ** 1.5) if kappa > 0 else 0.0
             peak_height = amplitude * np.exp(kappa)
+            width_rows.append({
+                "hist_name": hist_name,
+                "peak": label.lower(),
+                "d0_pt_class": pt_label_c,
+                "anti_d0_pt_class": pt_label_cbar,
+                "multiplicity_class": mult_label,
+                "width_rad": width,
+                "width_err_rad": width_err,
+                "kappa": kappa,
+                "kappa_err": kappa_err,
+                "amplitude": amplitude,
+                "peak_height": peak_height,
+            })
             text = f"{label}: Height={peak_height:.2f}, Width={width:.2f} rad"
             latex = ROOT.TLatex(3, text_start_y - idx * text_step, text)
             latex.SetTextAlign(21)  # center horizontally, align to top vertically
@@ -505,9 +541,30 @@ for hist in pair_histograms:
 for fit_func in pair_fit_functions:
     fit_func.Write()
 
+with open(width_outpath, "w", encoding="utf-8") as width_file:
+    width_file.write(
+        "hist_name\tpeak\td0_pt_class\tanti_d0_pt_class\tmultiplicity_class\t"
+        "width_rad\twidth_err_rad\tkappa\tkappa_err\tamplitude\tpeak_height\n"
+    )
+    for row in width_rows:
+        width_file.write(
+            f"{row['hist_name']}\t"
+            f"{row['peak']}\t"
+            f"{row['d0_pt_class']}\t"
+            f"{row['anti_d0_pt_class']}\t"
+            f"{row['multiplicity_class']}\t"
+            f"{row['width_rad']:.6f}\t"
+            f"{row['width_err_rad']:.6f}\t"
+            f"{row['kappa']:.6f}\t"
+            f"{row['kappa_err']:.6f}\t"
+            f"{row['amplitude']:.6f}\t"
+            f"{row['peak_height']:.6f}\n"
+        )
+
 end_time = time.perf_counter()
 elapsed_time = end_time - start_time
 # Print the result (formatted to 4 decimal places)
 print(f"Program execution time: {elapsed_time:.4f} seconds")
+print(f"Saved von Mises widths to {width_outpath}")
 
 output_file.Close()
