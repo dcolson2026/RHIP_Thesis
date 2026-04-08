@@ -30,14 +30,21 @@ MULT_CLASSES_HI = [23.4, 51.1, 300] # was 128.6 but upper bound should not matte
 # fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root"
 fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"
 
+file_list_MB = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_1.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_2.root"]
+file_list_hard = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_1.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_2.root"]
+file_list_HI = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"]
+
 if "MB" in fpath:
     file_type = "MB"
+    file_list = file_list_MB
     mult_edges = MULT_CLASSES_MB
 elif "hard" in fpath:
     file_type = "hard"
+    file_list = file_list_hard
     mult_edges = MULT_CLASSES_HARD
 elif "heavyion" in fpath:
     file_type = "HI"
+    file_list = file_list_HI
     mult_edges = MULT_CLASSES_HI
 else:
     raise ValueError(f"Could not determine file type from fpath: {fpath}")
@@ -97,9 +104,14 @@ width_outpath = (
     f"{today.month}_{today.day}_{today.year}_thesis_{file_type}_von_mises_widths.txt"
 )
 # Open the ROOT file
-root_file = ROOT.TFile(fpath, "READ") # USER INPUT
+# root_file = ROOT.TFile(fpath, "READ") # USER INPUT
 #root_file = ROOT.TFile("pythia_100_events_pT_hard.root", "READ")
-tree = root_file.Get("events") # fetches the tree
+# tree = root_file.Get("events") # fetches the tree
+tree = ROOT.TChain("events")
+
+for fpath in file_list:
+    tree.Add(fpath)
+
 
 # Create variables to hold data
 pdg = ROOT.std.vector('int')()
@@ -160,8 +172,9 @@ h10_D0_vs_antiD0_pT = ROOT.TH2F(
 large_dict = {}
 # Loop over all events
 m_events = tree.GetEntries()
+print(file_type)
 print(m_events, "events in total")
-for i in range(1000000): # m_entries, edit to look at single event
+for i in range(m_events): # m_entries, edit to look at single event
     ccbar_pair_count = 0
     ccbar_hadron_daughters = 0
     if i % 1000 == 0:
