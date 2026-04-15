@@ -1,6 +1,7 @@
 import ROOT
 import time
 import numpy as np
+import ctypes
 from particle import Particle
 from datetime import date
 from ROOT_analysis_functions import (
@@ -25,44 +26,50 @@ MULT_CLASSES_MB = [7.9, 19.6, 300] # was 65.7 but upper bound should not matter
 MULT_CLASSES_HARD = [29.2, 46.3, 300] # was 90.2 but upper bound should not matter
 MULT_CLASSES_HI = [23.4, 51.1, 300] # was 128.6 but upper bound should not matter
 
-
 # fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_9M_events.root"
 # fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root"
-fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"
+# fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"
 
-file_list_MB = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_1.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_2.root"]
-file_list_hard = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_1.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_2.root"]
-file_list_HI = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"]
+# file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_9M_events.root"]
+# file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_1.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_2.root"]
+file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"]
 
-if "MB" in fpath:
+if "MB" in file_list[0]:
     file_type = "MB"
-    file_list = file_list_MB
     mult_edges = MULT_CLASSES_MB
-elif "hard" in fpath:
+elif "hard" in file_list[0]:
     file_type = "hard"
-    file_list = file_list_hard
     mult_edges = MULT_CLASSES_HARD
-elif "heavyion" in fpath:
+elif "heavyion" in file_list[0]:
     file_type = "HI"
-    file_list = file_list_HI
     mult_edges = MULT_CLASSES_HI
 else:
-    raise ValueError(f"Could not determine file type from fpath: {fpath}")
+    raise ValueError(f"Could not determine file type from fpath: {file_list}")
 # PT_BINS = [
 #     ("low_pT", 0.0, 2.0),
 #     ("mid_pT", 2.0, 4.0),
 #     ("high_pT", 4.0, 8.0),
 # ]
 # make finer pT binning, also change pT_pretty
+# PT_BINS = [
+#     ("first_pT", 0.0, 1.0),
+#     ("second_pT", 1.0, 2.0),
+#     ("third_pT", 2.0, 3.0),
+#     ("fourth_pT", 3.0, 4.0),
+#     ("fifth_pT", 4.0, 5.0),
+#     ("sixth_pT", 5.0, 6.0),
+#     ("seventh_pT", 6.0, 7.0),
+#     ("eighth_pT", 7.0, 8.0),
+# ]
 PT_BINS = [
-    ("first_pT", 0.0, 1.0),
-    ("second_pT", 1.0, 2.0),
-    ("third_pT", 2.0, 3.0),
-    ("fourth_pT", 3.0, 4.0),
-    ("fifth_pT", 4.0, 5.0),
-    ("sixth_pT", 5.0, 6.0),
-    ("seventh_pT", 6.0, 7.0),
-    ("eighth_pT", 7.0, 8.0),
+    ("first_pT", 0.0, 0.5),
+    ("second_pT", 0.5, 1.0),
+    ("third_pT", 1.0, 1.5),
+    ("fourth_pT", 1.5, 2.0),
+    ("fifth_pT", 2.0, 2.5),
+    ("sixth_pT", 2.5, 3.0),
+    ("seventh_pT", 3.0, 3.5),
+    ("eighth_pT", 3.5, 8.0),
 ]
 MULT_BINS = [
     ("low_mult", 0.0, mult_edges[0]),
@@ -82,14 +89,14 @@ for mult_label, mult_lo, mult_hi in MULT_BINS:
         hist.Sumw2()
         h_dihadron_dphi[(pt_label, mult_label)] = hist
 pt_pretty = {
-    "first_pT": "0 < p_{T} #leq 1 GeV",
-    "second_pT": "1 < p_{T} #leq 2 GeV",
-    "third_pT": "2 < p_{T} #leq 3 GeV",
-    "fourth_pT": "3 < p_{T} #leq 4 GeV",
-    "fifth_pT": "4 < p_{T} #leq 5 GeV",
-    "sixth_pT": "5 < p_{T} #leq 6 GeV",
-    "seventh_pT": "6 < p_{T} #leq 7 GeV",
-    "eighth_pT": "7 < p_{T} #leq 8 GeV",
+    "first_pT": "0 < p_{T} #leq 0.5 GeV",
+    "second_pT": "0.5 < p_{T} #leq 1 GeV",
+    "third_pT": "1 < p_{T} #leq 1.5 GeV",
+    "fourth_pT": "1.5 < p_{T} #leq 2 GeV",
+    "fifth_pT": "2 < p_{T} #leq 2.5 GeV",
+    "sixth_pT": "2.5 < p_{T} #leq 3.0 GeV",
+    "seventh_pT": "3.0 < p_{T} #leq 3.5 GeV",
+    "eighth_pT": "3.5 < p_{T} #leq 8 GeV",
 }
 
 mult_pretty = {
@@ -172,8 +179,8 @@ h10_D0_vs_antiD0_pT = ROOT.TH2F(
 large_dict = {}
 # Loop over all events
 m_events = tree.GetEntries()
-print(file_type)
 print(m_events, "events in total")
+print(file_type)
 for i in range(m_events): # m_entries, edit to look at single event
     ccbar_pair_count = 0
     ccbar_hadron_daughters = 0
@@ -486,6 +493,14 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
             fits_for_hist.append(("Away", away_fit, away_chi2, away_ndf))
     if fits_for_hist:
         axis = hist.GetXaxis()
+        near_low_bin = axis.FindBin(-PI / 2 + 1e-6)
+        near_high_bin = axis.FindBin(PI / 2 - 1e-6)
+        away_low_bin = axis.FindBin(PI / 2 + 1e-6)
+        away_high_bin = axis.FindBin(3 * PI / 2 - 1e-6)
+        near_yield_err = ctypes.c_double(0.0)
+        away_yield_err = ctypes.c_double(0.0)
+        near_yield = hist.IntegralAndError(near_low_bin, near_high_bin, near_yield_err)
+        away_yield = hist.IntegralAndError(away_low_bin, away_high_bin, away_yield_err)
         # x_center = 0.5 * (axis.GetXmin() + axis.GetXmax())
         y_max = hist.GetMaximum()
         if y_max <= 0:
@@ -504,12 +519,20 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
             width = np.sqrt(1.0 / kappa) if kappa > 0 else 0.0
             width_err = 0.5 * kappa_err / (kappa ** 1.5) if kappa > 0 else 0.0
             peak_height = amplitude * np.exp(kappa)
+            if label == "Near":
+                peak_yield = near_yield
+                peak_yield_err = near_yield_err.value
+            else:
+                peak_yield = away_yield
+                peak_yield_err = away_yield_err.value
             width_rows.append({
                 "hist_name": hist_name,
                 "peak": label.lower(),
                 "d0_pt_class": pt_label_c,
                 "anti_d0_pt_class": pt_label_cbar,
                 "multiplicity_class": mult_label,
+                "yield_counts": peak_yield,
+                "yield_err_counts": peak_yield_err,
                 "width_rad": width,
                 "width_err_rad": width_err,
                 "kappa": kappa,
@@ -557,7 +580,8 @@ for fit_func in pair_fit_functions:
 with open(width_outpath, "w", encoding="utf-8") as width_file:
     width_file.write(
         "hist_name\tpeak\td0_pt_class\tanti_d0_pt_class\tmultiplicity_class\t"
-        "width_rad\twidth_err_rad\tkappa\tkappa_err\tamplitude\tpeak_height\n"
+        "yield_counts\tyield_err_counts\twidth_rad\twidth_err_rad\t"
+        "kappa\tkappa_err\tamplitude\tpeak_height\n"
     )
     for row in width_rows:
         width_file.write(
@@ -566,6 +590,8 @@ with open(width_outpath, "w", encoding="utf-8") as width_file:
             f"{row['d0_pt_class']}\t"
             f"{row['anti_d0_pt_class']}\t"
             f"{row['multiplicity_class']}\t"
+            f"{row['yield_counts']:.6f}\t"
+            f"{row['yield_err_counts']:.6f}\t"
             f"{row['width_rad']:.6f}\t"
             f"{row['width_err_rad']:.6f}\t"
             f"{row['kappa']:.6f}\t"
