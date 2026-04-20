@@ -161,91 +161,352 @@ def create_von_mises_fit(
     return func
 
 
-def fit_von_mises_region(
+# def fit_von_mises_region(
+#     histogram,
+#     fit_name: str,
+#     x_min: float,
+#     x_max: float,
+#     mu_guess: float,
+#     line_color: int,
+#     min_entries: int = 10,
+# ):
+#     """
+#     Fit the provided histogram within a window using a von Mises function.
+
+#     Returns (TF1, chi2, ndf) if the fit succeeds, otherwise None.
+#     """
+#     import ROOT
+
+#     axis = histogram.GetXaxis()
+#     hist_xmin = axis.GetXmin()
+#     hist_xmax = axis.GetXmax()
+
+#     fit_xmin = max(x_min, hist_xmin)
+#     fit_xmax = min(x_max, hist_xmax)
+
+#     if fit_xmax <= fit_xmin:
+#         print(f"[von_mises] Bad fit range: {fit_xmin:.3f} – {fit_xmax:.3f}")
+#         return None
+
+#     low_bin = max(1, axis.FindBin(fit_xmin + _FIT_RANGE_EPS))
+#     high_bin = min(axis.FindBin(fit_xmax - _FIT_RANGE_EPS), histogram.GetNbinsX())
+#     if high_bin < low_bin:
+#         print(f"[von_mises] high_bin < low_bin ({high_bin} < {low_bin})")
+#         return None
+
+#     entries_in_window = histogram.Integral(low_bin, high_bin)
+#     if entries_in_window < min_entries:
+#         print(
+#             f"[von_mises] Not enough entries in window "
+#             f"({entries_in_window} < {min_entries}) for {fit_name}"
+#         )
+#         return None
+
+#     # Crude amplitude & baseline guesses from the local window
+#     local_max = 0.0
+#     local_sum = 0.0
+#     local_bins = 0
+#     for bin_idx in range(low_bin, high_bin + 1):
+#         content = histogram.GetBinContent(bin_idx)
+#         local_max = max(local_max, content)
+#         local_sum += content
+#         local_bins += 1
+
+#     baseline_guess = (local_sum / local_bins) if local_bins else 0.1
+
+#     fit = create_von_mises_fit(
+#         fit_name,
+#         fit_xmin,
+#         fit_xmax,
+#         mu_guess,
+#         local_max,
+#         baseline_guess,
+#     )
+#     fit.SetRange(fit_xmin, fit_xmax)
+#     fit.SetLineColor(line_color)
+#     fit.SetLineWidth(3)
+#     fit.SetNpx(600)
+
+#     # "R" = use range, "Q" = quiet, "S" = return fit result
+#     fit_status = histogram.Fit(fit, "RQS+", "", fit_xmin, fit_xmax)
+
+#     # PyROOT 6: Fit returns a TFitResultPtr with Status()
+#     if hasattr(fit_status, "Status"):
+#         status = fit_status.Status()
+#         if status != 0:
+#             print(f"[von_mises] Fit failed for {fit_name}, status = {status}")
+#             return None
+#     else:
+#         # Older ROOT: Fit returns an int
+#         if fit_status != 0:
+#             print(f"[von_mises] Fit failed for {fit_name}, status = {fit_status}")
+#             return None
+
+#     chi2 = fit.GetChisquare()
+#     ndf = fit.GetNDF()
+#     print(
+#         f"[von_mises] Fit OK for {fit_name}: "
+#         f"chi2/ndf = {chi2:.1f}/{int(ndf) if ndf else 0}"
+#     )
+#     return fit, chi2, ndf
+
+# def fit_von_mises_region(
+#     histogram,
+#     fit_name: str,
+#     x_min: float,
+#     x_max: float,
+#     mu_guess: float,
+#     line_color: int,
+#     min_entries: int = 10,
+# ):
+#     """
+#     Fit the provided histogram within a window using a PERIODIC von Mises shape.
+
+#     The fitted function includes image peaks at mu, mu-2pi, and mu+2pi so that
+#     a peak near a boundary still contributes correctly through the periodic wrap.
+
+#     Returns (TF1, chi2, ndf) if the fit succeeds, otherwise None.
+
+#     Parameter convention is kept compatible with the rest of your script:
+#         par[0] = amplitude
+#         par[1] = baseline
+#         par[2] = kappa
+#     """
+#     import ROOT
+#     import math
+
+#     axis = histogram.GetXaxis()
+#     hist_xmin = axis.GetXmin()
+#     hist_xmax = axis.GetXmax()
+
+#     fit_xmin = max(x_min, hist_xmin)
+#     fit_xmax = min(x_max, hist_xmax)
+
+#     if fit_xmax <= fit_xmin:
+#         print(f"[von_mises] Bad fit range: {fit_xmin:.3f} – {fit_xmax:.3f}")
+#         return None
+
+#     low_bin = max(1, axis.FindBin(fit_xmin + _FIT_RANGE_EPS))
+#     high_bin = min(axis.FindBin(fit_xmax - _FIT_RANGE_EPS), histogram.GetNbinsX())
+#     if high_bin < low_bin:
+#         print(f"[von_mises] high_bin < low_bin ({high_bin} < {low_bin})")
+#         return None
+
+#     entries_in_window = histogram.Integral(low_bin, high_bin)
+#     if entries_in_window < min_entries:
+#         print(
+#             f"[von_mises] Not enough entries in window "
+#             f"({entries_in_window} < {min_entries}) for {fit_name}"
+#         )
+#         return None
+
+#     # Crude amplitude & baseline guesses from the local window
+#     local_max = 0.0
+#     local_sum = 0.0
+#     local_bins = 0
+#     for bin_idx in range(low_bin, high_bin + 1):
+#         content = histogram.GetBinContent(bin_idx)
+#         local_max = max(local_max, content)
+#         local_sum += content
+#         local_bins += 1
+
+#     baseline_guess = (local_sum / local_bins) if local_bins else 0.1
+#     amplitude_guess = max(local_max - baseline_guess, 0.1)
+
+#     twopi = 2.0 * math.pi
+
+#     def periodic_von_mises(x, par):
+#         phi = x[0]
+#         amplitude = par[0]
+#         baseline = par[1]
+#         kappa = par[2]
+
+#         # Include central peak plus nearest periodic images.
+#         # This is the key change: the fit "knows" about wrap-around.
+#         vm0  = math.exp(kappa * math.cos(phi - mu_guess))
+#         vm_p = math.exp(kappa * math.cos(phi - (mu_guess + twopi)))
+#         vm_m = math.exp(kappa * math.cos(phi - (mu_guess - twopi)))
+
+#         return baseline + amplitude * (vm0 + vm_p + vm_m)
+
+#     fit = ROOT.TF1(
+#         fit_name,
+#         periodic_von_mises,
+#         fit_xmin,
+#         fit_xmax,
+#         3,
+#     )
+
+#     fit.SetParNames("Amplitude", "Baseline", "Kappa")
+#     fit.SetParameters(amplitude_guess, baseline_guess, 2.0)
+
+#     fit.SetParLimits(0, 0.0, max(10.0 * max(local_max, 1.0), 1e6))
+#     fit.SetParLimits(1, 0.0, max(10.0 * max(local_max, 1.0), 1e6))
+#     fit.SetParLimits(2, 1e-3, 100.0)
+
+#     fit.SetRange(fit_xmin, fit_xmax)
+#     fit.SetLineColor(line_color)
+#     fit.SetLineWidth(3)
+#     fit.SetNpx(1200)
+
+#     # "R" = use range, "Q" = quiet, "S" = return fit result
+#     fit_status = histogram.Fit(fit, "RQS+", "", fit_xmin, fit_xmax)
+
+#     # PyROOT 6: Fit returns a TFitResultPtr with Status()
+#     if hasattr(fit_status, "Status"):
+#         status = fit_status.Status()
+#         if status != 0:
+#             print(f"[von_mises] Fit failed for {fit_name}, status = {status}")
+#             return None
+#     else:
+#         # Older ROOT: Fit returns an int
+#         if fit_status != 0:
+#             print(f"[von_mises] Fit failed for {fit_name}, status = {fit_status}")
+#             return None
+
+#     chi2 = fit.GetChisquare()
+#     ndf = fit.GetNDF()
+#     print(
+#         f"[von_mises] Fit OK for {fit_name}: "
+#         f"chi2/ndf = {chi2:.1f}/{int(ndf) if ndf else 0}"
+#     )
+#     return fit, chi2, ndf
+
+def fit_double_von_mises_periodic(
     histogram,
     fit_name: str,
-    x_min: float,
-    x_max: float,
-    mu_guess: float,
     line_color: int,
-    min_entries: int = 10,
+    min_entries: int = 20,
 ):
     """
-    Fit the provided histogram within a window using a von Mises function.
+    Fit the full histogram with a periodic double-von-Mises model:
 
-    Returns (TF1, chi2, ndf) if the fit succeeds, otherwise None.
+        f(phi) = baseline
+               + Y_NS / (2*pi*I0(kappa_NS)) * exp(kappa_NS * cos(phi))
+               + Y_AS / (2*pi*I0(kappa_AS)) * exp(kappa_AS * cos(phi - pi))
+
+    Physics meaning of parameters:
+        par[0] = baseline
+        par[1] = near-side yield
+        par[2] = near-side kappa
+        par[3] = away-side yield
+        par[4] = away-side kappa
+
+    Near side is fixed at mu = 0.
+    Away side is fixed at mu = pi.
+
+    Returns (TF1, chi2, ndf) if fit succeeds, otherwise None.
     """
     import ROOT
+    import math
 
     axis = histogram.GetXaxis()
-    hist_xmin = axis.GetXmin()
-    hist_xmax = axis.GetXmax()
+    fit_xmin = axis.GetXmin()
+    fit_xmax = axis.GetXmax()
 
-    fit_xmin = max(x_min, hist_xmin)
-    fit_xmax = min(x_max, hist_xmax)
-
-    if fit_xmax <= fit_xmin:
-        print(f"[von_mises] Bad fit range: {fit_xmin:.3f} – {fit_xmax:.3f}")
-        return None
-
-    low_bin = max(1, axis.FindBin(fit_xmin + _FIT_RANGE_EPS))
-    high_bin = min(axis.FindBin(fit_xmax - _FIT_RANGE_EPS), histogram.GetNbinsX())
-    if high_bin < low_bin:
-        print(f"[von_mises] high_bin < low_bin ({high_bin} < {low_bin})")
-        return None
-
-    entries_in_window = histogram.Integral(low_bin, high_bin)
-    if entries_in_window < min_entries:
+    total_entries = histogram.Integral()
+    if total_entries < min_entries:
         print(
-            f"[von_mises] Not enough entries in window "
-            f"({entries_in_window} < {min_entries}) for {fit_name}"
+            f"[double_vm] Not enough entries "
+            f"({total_entries} < {min_entries}) for {fit_name}"
         )
         return None
 
-    # Crude amplitude & baseline guesses from the local window
-    local_max = 0.0
-    local_sum = 0.0
-    local_bins = 0
-    for bin_idx in range(low_bin, high_bin + 1):
-        content = histogram.GetBinContent(bin_idx)
-        local_max = max(local_max, content)
-        local_sum += content
-        local_bins += 1
+    # Crude initialization from the histogram itself
+    nbins = histogram.GetNbinsX()
+    hist_max = histogram.GetMaximum()
+    hist_mean = total_entries / nbins if nbins > 0 else 0.0
+    baseline_guess = max(0.0, min(hist_mean, 0.5 * hist_max))
 
-    baseline_guess = (local_sum / local_bins) if local_bins else 0.1
+    # Split the histogram into rough near/away windows only for starting guesses.
+    # This does NOT define the fit model; the fit is still global.
+    pi = math.pi
+    eps = 1e-6
 
-    fit = create_von_mises_fit(
+    near_low_bin_1 = axis.FindBin(-pi/2 + eps)
+    near_high_bin_1 = axis.FindBin(pi/2 - eps)
+
+    away_low_bin = axis.FindBin(pi/2 + eps)
+    away_high_bin = axis.FindBin(3*pi/2 - eps)
+
+    near_guess = histogram.Integral(near_low_bin_1, near_high_bin_1)
+    away_guess = histogram.Integral(away_low_bin, away_high_bin)
+
+    # Prevent pathological zero seeds
+    near_guess = max(near_guess, max(1.0, 0.25 * total_entries))
+    away_guess = max(away_guess, max(1.0, 0.25 * total_entries))
+
+    def double_vm_periodic(x, par):
+        phi = x[0]
+
+        baseline = par[0]
+        yield_ns = par[1]
+        kappa_ns = par[2]
+        yield_as = par[3]
+        kappa_as = par[4]
+
+        # Normalized von Mises components so yield parameters are meaningful
+        ns_norm = yield_ns / (2.0 * math.pi * ROOT.TMath.BesselI0(kappa_ns))
+        as_norm = yield_as / (2.0 * math.pi * ROOT.TMath.BesselI0(kappa_as))
+
+        near = ns_norm * math.exp(kappa_ns * math.cos(phi))
+        away = as_norm * math.exp(kappa_as * math.cos(phi - math.pi))
+
+        return baseline + near + away
+
+    fit = ROOT.TF1(
         fit_name,
+        double_vm_periodic,
         fit_xmin,
         fit_xmax,
-        mu_guess,
-        local_max,
-        baseline_guess,
+        5,
     )
+    fit.SetParNames(
+        "Baseline",
+        "Yield_NS",
+        "Kappa_NS",
+        "Yield_AS",
+        "Kappa_AS",
+    )
+
+    fit.SetParameters(
+        baseline_guess,
+        near_guess,
+        2.0,
+        away_guess,
+        2.0,
+    )
+
+    # Sensible parameter limits
+    upper_scale = max(10.0 * max(hist_max, 1.0), 1e6)
+    fit.SetParLimits(0, 0.0, upper_scale)
+    fit.SetParLimits(1, 0.0, max(10.0 * near_guess, 1e6))
+    fit.SetParLimits(2, 1e-3, 100.0)
+    fit.SetParLimits(3, 0.0, max(10.0 * away_guess, 1e6))
+    fit.SetParLimits(4, 1e-3, 100.0)
+
     fit.SetRange(fit_xmin, fit_xmax)
     fit.SetLineColor(line_color)
     fit.SetLineWidth(3)
-    fit.SetNpx(600)
+    fit.SetNpx(1200)
 
-    # "R" = use range, "Q" = quiet, "S" = return fit result
+    # Full-range fit
     fit_status = histogram.Fit(fit, "RQS+", "", fit_xmin, fit_xmax)
 
-    # PyROOT 6: Fit returns a TFitResultPtr with Status()
     if hasattr(fit_status, "Status"):
         status = fit_status.Status()
         if status != 0:
-            print(f"[von_mises] Fit failed for {fit_name}, status = {status}")
+            print(f"[double_vm] Fit failed for {fit_name}, status = {status}")
             return None
     else:
-        # Older ROOT: Fit returns an int
         if fit_status != 0:
-            print(f"[von_mises] Fit failed for {fit_name}, status = {fit_status}")
+            print(f"[double_vm] Fit failed for {fit_name}, status = {fit_status}")
             return None
 
     chi2 = fit.GetChisquare()
     ndf = fit.GetNDF()
     print(
-        f"[von_mises] Fit OK for {fit_name}: "
+        f"[double_vm] Fit OK for {fit_name}: "
         f"chi2/ndf = {chi2:.1f}/{int(ndf) if ndf else 0}"
     )
     return fit, chi2, ndf

@@ -22,6 +22,13 @@ today = date.today()
 
 PI = np.pi
 
+
+def use_visible_errors(hist):
+    hist.Sumw2()
+    hist.SetOption("E1")
+    hist.SetMarkerStyle(20)
+    hist.SetMarkerSize(0.7)
+
 MULT_CLASSES_MB = [7.9, 19.6, 300] # was 65.7 but upper bound should not matter
 MULT_CLASSES_HARD = [29.2, 46.3, 300] # was 90.2 but upper bound should not matter
 MULT_CLASSES_HI = [23.4, 51.1, 300] # was 128.6 but upper bound should not matter
@@ -31,8 +38,8 @@ MULT_CLASSES_HI = [23.4, 51.1, 300] # was 128.6 but upper bound should not matte
 # fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"
 
 # file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_9M_events.root"]
-# file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_1.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_2.root"]
-file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"]
+file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_1.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_2.root"]
+# file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"]
 
 if "MB" in file_list[0]:
     file_type = "MB"
@@ -86,7 +93,7 @@ for mult_label, mult_lo, mult_hi in MULT_BINS:
             f"#Delta#phi [rad];Counts"
         )
         hist = ROOT.TH1F(hname, htitle, 64, -ROOT.TMath.Pi()/2, 3*ROOT.TMath.Pi()/2)
-        hist.Sumw2()
+        use_visible_errors(hist)
         h_dihadron_dphi[(pt_label, mult_label)] = hist
 pt_pretty = {
     "first_pT": "0 < p_{T} #leq 0.5 GeV",
@@ -171,17 +178,34 @@ h6_antiD0_pT_dist = ROOT.TH1F("h6_antiD0_pT_dist", "p_{T} of #bar{D}^{0};p_{T}(#
 
 h10_D0_vs_antiD0_pT = ROOT.TH2F(
     "h10_D0_vs_antiD0_pT",
-    "p_{T}(D^{0}) vs p_{T}(#bar{D}^{0});p_{T}(D^{0}) [GeV];p_{T}(#bar{D}^{0}) [GeV]",
+    "p_{T}(D^{0}) vs p_{T}(#bar{D}^{0});p_{T}(D^{0}) [GeV];p_{T}(#bar{D}^{0}) [GeV];D^{0}-#bar{D}^{0} pairs / bin",
     50, 0, 8,          # X axis: D0 pT
     50, 0, 8           # Y axis: anti-D0 pT
 )
+h10_D0_vs_antiD0_pT.SetOption("COLZ")
+
+h10_y_equals_x = ROOT.TLine(0, 0, 8, 8)
+h10_y_equals_x.SetLineColor(ROOT.kRed + 1)
+h10_y_equals_x.SetLineStyle(2)
+h10_y_equals_x.SetLineWidth(2)
+h10_D0_vs_antiD0_pT.GetListOfFunctions().Add(h10_y_equals_x)
+
+h10_D0_vs_antiD0_pT_yx_asymmetry = ROOT.TH2F(
+    "h10_D0_vs_antiD0_pT_yx_asymmetry",
+    "Mirror-bin asymmetry for p_{T}(D^{0}) vs p_{T}(#bar{D}^{0});"
+    "p_{T}(D^{0}) [GeV];p_{T}(#bar{D}^{0}) [GeV];"
+    "(N_{ij} - N_{ji}) / (N_{ij} + N_{ji})",
+    50, 0, 8,
+    50, 0, 8
+)
+h10_D0_vs_antiD0_pT_yx_asymmetry.SetOption("COLZ")
 
 large_dict = {}
 # Loop over all events
 m_events = tree.GetEntries()
 print(m_events, "events in total")
 print(file_type)
-for i in range(m_events): # m_entries, edit to look at single event
+for i in range(1000000): # m_entries, edit to look at single event
     ccbar_pair_count = 0
     ccbar_hadron_daughters = 0
     if i % 1000 == 0:
@@ -431,6 +455,84 @@ for i in range(m_events): # m_entries, edit to look at single event
         # pair_key = (pdg[last_c_index], pdg[last_cbar_index])
         large_dict.setdefault(pair_key, []).append(last_descendants_dphi)
 
+symmetry_total_abs_diff = 0.0
+symmetry_total_pairs = 0.0
+symmetry_chi2 = 0.0
+symmetry_ndf = 0
+max_abs_asymmetry = 0.0
+max_asymmetry_bin = None
+
+for x_bin in range(1, h10_D0_vs_antiD0_pT.GetNbinsX() + 1):
+    for y_bin in range(1, h10_D0_vs_antiD0_pT.GetNbinsY() + 1):
+        content_xy = h10_D0_vs_antiD0_pT.GetBinContent(x_bin, y_bin)
+        content_yx = h10_D0_vs_antiD0_pT.GetBinContent(y_bin, x_bin)
+        pair_sum = content_xy + content_yx
+        if pair_sum <= 0:
+            continue
+
+        asymmetry = (content_xy - content_yx) / pair_sum
+        h10_D0_vs_antiD0_pT_yx_asymmetry.SetBinContent(x_bin, y_bin, asymmetry)
+
+        if x_bin < y_bin:
+            diff = content_xy - content_yx
+            symmetry_total_abs_diff += abs(diff)
+            symmetry_total_pairs += pair_sum
+            symmetry_chi2 += diff * diff / pair_sum
+            symmetry_ndf += 1
+
+            abs_asymmetry = abs(asymmetry)
+            if abs_asymmetry > max_abs_asymmetry:
+                max_abs_asymmetry = abs_asymmetry
+                max_asymmetry_bin = (x_bin, y_bin)
+
+symmetry_norm_abs_diff = (
+    symmetry_total_abs_diff / symmetry_total_pairs
+    if symmetry_total_pairs > 0
+    else 0.0
+)
+symmetry_chi2_per_ndf = symmetry_chi2 / symmetry_ndf if symmetry_ndf > 0 else 0.0
+
+h10_D0_vs_antiD0_pT_yx_symmetry_check = ROOT.TH1F(
+    "h10_D0_vs_antiD0_pT_yx_symmetry_check",
+    "y=x symmetry check for h10_D0_vs_antiD0_pT;Metric;Value",
+    4,
+    0.5,
+    4.5
+)
+h10_D0_vs_antiD0_pT_yx_symmetry_check.GetXaxis().SetBinLabel(1, "mirror bin pairs")
+h10_D0_vs_antiD0_pT_yx_symmetry_check.GetXaxis().SetBinLabel(2, "norm abs diff")
+h10_D0_vs_antiD0_pT_yx_symmetry_check.GetXaxis().SetBinLabel(3, "chi2/ndf")
+h10_D0_vs_antiD0_pT_yx_symmetry_check.GetXaxis().SetBinLabel(4, "max abs asym")
+h10_D0_vs_antiD0_pT_yx_symmetry_check.SetBinContent(1, symmetry_ndf)
+h10_D0_vs_antiD0_pT_yx_symmetry_check.SetBinContent(2, symmetry_norm_abs_diff)
+h10_D0_vs_antiD0_pT_yx_symmetry_check.SetBinContent(3, symmetry_chi2_per_ndf)
+h10_D0_vs_antiD0_pT_yx_symmetry_check.SetBinContent(4, max_abs_asymmetry)
+h10_D0_vs_antiD0_pT_yx_symmetry_check.SetOption("HIST TEXT0")
+
+print("h10_D0_vs_antiD0_pT y=x symmetry check:")
+print(f"  compared mirror bin pairs: {symmetry_ndf}")
+print(f"  normalized absolute mirror-bin difference: {symmetry_norm_abs_diff:.6f}")
+print(f"  chi2/ndf from mirror-bin differences: {symmetry_chi2_per_ndf:.6f}")
+if max_asymmetry_bin is not None:
+    x_bin, y_bin = max_asymmetry_bin
+    x_center = h10_D0_vs_antiD0_pT.GetXaxis().GetBinCenter(x_bin)
+    y_center = h10_D0_vs_antiD0_pT.GetYaxis().GetBinCenter(y_bin)
+    print(
+        "  largest fractional asymmetry: "
+        f"{max_abs_asymmetry:.6f} at "
+        f"pT(D0)={x_center:.3f} GeV, pT(anti-D0)={y_center:.3f} GeV"
+    )
+
+h10_D0_vs_antiD0_pT_surface = h10_D0_vs_antiD0_pT.Clone(
+    "h10_D0_vs_antiD0_pT_surface"
+)
+h10_D0_vs_antiD0_pT_surface.SetTitle(
+    "Surface plot of p_{T}(D^{0}) vs p_{T}(#bar{D}^{0});"
+    "p_{T}(D^{0}) [GeV];p_{T}(#bar{D}^{0}) [GeV];"
+    "D^{0}-#bar{D}^{0} pairs / bin"
+)
+h10_D0_vs_antiD0_pT_surface.SetOption("SURF2")
+
 
 
 pair_histograms = []
@@ -451,6 +553,7 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
         f"#Delta#phi (radians);Counts"
         )
     hist = ROOT.TH1F(hist_name, hist_title, 30, -PI/2, 3*PI/2)
+    use_visible_errors(hist)
     for value in delta_phi_values:
         hist.Fill(value)
     hist.SetLineWidth(2)
@@ -459,10 +562,14 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
     fits_for_hist = []
     if hist.GetEntries() > 0:
         bin_margin = hist.GetBinWidth(1)
-        near_window_min = -PI / 2 - bin_margin
-        near_window_max = PI / 2 + bin_margin
-        away_window_min = PI / 2 - bin_margin
-        away_window_max = 3 * PI / 2 + bin_margin
+        # near_window_min = -PI / 2 - bin_margin
+        # near_window_max = PI / 2 + bin_margin
+        near_window_min = hist.GetXaxis().GetXmin()
+        near_window_max = hist.GetXaxis().GetXmax()
+        # away_window_min = PI / 2 - bin_margin
+        # away_window_max = 3 * PI / 2 + bin_margin
+        away_window_min = hist.GetXaxis().GetXmin()
+        away_window_max = hist.GetXaxis().GetXmax()
 
         near_result = fit_von_mises_region(
             hist,
@@ -572,6 +679,9 @@ h6_antiD0_pT_dist.Write()
 # h8_med_pT_D0_descendants_dphi.Write()
 # h9_high_pT_D0_descendants_dphi.Write()
 h10_D0_vs_antiD0_pT.Write()
+h10_D0_vs_antiD0_pT_surface.Write()
+h10_D0_vs_antiD0_pT_yx_asymmetry.Write()
+h10_D0_vs_antiD0_pT_yx_symmetry_check.Write()
 for hist in pair_histograms:
     hist.Write()
 for fit_func in pair_fit_functions:
