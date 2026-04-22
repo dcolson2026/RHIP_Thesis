@@ -13,9 +13,10 @@ from ROOT_analysis_functions import (
     # delta_phi_correlation,
     caleta,
     following_charm_dfs,
-    fit_von_mises_region,
+    # fit_von_mises_region,
     is_charged_pdg,
-    get_bin_label
+    get_bin_label,
+    fit_double_von_mises_periodic
 )
 start_time = time.perf_counter()
 today = date.today()
@@ -37,8 +38,8 @@ MULT_CLASSES_HI = [23.4, 51.1, 300] # was 128.6 but upper bound should not matte
 # fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root"
 # fpath = "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"
 
-# file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_9M_events.root"]
-file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_1.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_2.root"]
+file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_MB_9M_events.root"]
+# file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_1.root", "/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_hard_9M_events_2.root"]
 # file_list = ["/home/daniel/LibraFiles/CleanThesis/PythiaData/pythia_spring_minbias_1M_heavyion_events.root"]
 
 if "MB" in file_list[0]:
@@ -69,15 +70,12 @@ else:
 #     ("eighth_pT", 7.0, 8.0),
 # ]
 PT_BINS = [
-    ("first_pT", 0.0, 0.5),
-    ("second_pT", 0.5, 1.0),
-    ("third_pT", 1.0, 1.5),
-    ("fourth_pT", 1.5, 2.0),
-    ("fifth_pT", 2.0, 2.5),
-    ("sixth_pT", 2.5, 3.0),
-    ("seventh_pT", 3.0, 3.5),
-    ("eighth_pT", 3.5, 8.0),
+    ("first_pT", 0.0, 1.5),
+    ("second_pT", 1.5, 3),
+    ("third_pT", 3, 4.5),
+    ("fourth_pT", 4.5, 10),
 ]
+
 MULT_BINS = [
     ("low_mult", 0.0, mult_edges[0]),
     ("mid_mult", mult_edges[0], mult_edges[1]),
@@ -95,15 +93,21 @@ for mult_label, mult_lo, mult_hi in MULT_BINS:
         hist = ROOT.TH1F(hname, htitle, 64, -ROOT.TMath.Pi()/2, 3*ROOT.TMath.Pi()/2)
         use_visible_errors(hist)
         h_dihadron_dphi[(pt_label, mult_label)] = hist
+# pt_pretty = {
+#     "first_pT": "0 < p_{T} #leq 0.5 GeV",
+#     "second_pT": "0.5 < p_{T} #leq 1 GeV",
+#     "third_pT": "1 < p_{T} #leq 1.5 GeV",
+#     "fourth_pT": "1.5 < p_{T} #leq 2 GeV",
+#     "fifth_pT": "2 < p_{T} #leq 2.5 GeV",
+#     "sixth_pT": "2.5 < p_{T} #leq 3.0 GeV",
+#     "seventh_pT": "3.0 < p_{T} #leq 3.5 GeV",
+#     "eighth_pT": "3.5 < p_{T} #leq 8 GeV",
+# }
 pt_pretty = {
-    "first_pT": "0 < p_{T} #leq 0.5 GeV",
-    "second_pT": "0.5 < p_{T} #leq 1 GeV",
-    "third_pT": "1 < p_{T} #leq 1.5 GeV",
-    "fourth_pT": "1.5 < p_{T} #leq 2 GeV",
-    "fifth_pT": "2 < p_{T} #leq 2.5 GeV",
-    "sixth_pT": "2.5 < p_{T} #leq 3.0 GeV",
-    "seventh_pT": "3.0 < p_{T} #leq 3.5 GeV",
-    "eighth_pT": "3.5 < p_{T} #leq 8 GeV",
+    "first_pT": "0 < p_{T} #leq 1.5 GeV",
+    "second_pT": "1.5 < p_{T} #leq 3.0 GeV",
+    "third_pT": "3.0 < p_{T} #leq 4.5 GeV",
+    "fourth_pT": "4.5 < p_{T} #leq 10 GeV",
 }
 
 mult_pretty = {
@@ -112,10 +116,10 @@ mult_pretty = {
     "high_mult": "high multiplicity",
 }
 
-outpath = f"/home/daniel/LibraFiles/CleanThesis/RootOutputs/{today.month}_{today.day}_{today.year}_thesis_{file_type}.root"
+outpath = f"/home/daniel/LibraFiles/CleanThesis/RootOutputs/{today.month}_{today.day}_{today.year}_thesis_{file_type}_flowstate.root"
 width_outpath = (
     f"/home/daniel/LibraFiles/CleanThesis/RootOutputs/"
-    f"{today.month}_{today.day}_{today.year}_thesis_{file_type}_von_mises_widths.txt"
+    f"{today.month}_{today.day}_{today.year}_thesis_{file_type}_von_mises_widths_flowstate.txt"
 )
 # Open the ROOT file
 # root_file = ROOT.TFile(fpath, "READ") # USER INPUT
@@ -205,7 +209,7 @@ large_dict = {}
 m_events = tree.GetEntries()
 print(m_events, "events in total")
 print(file_type)
-for i in range(1000000): # m_entries, edit to look at single event
+for i in range(m_events): # m_entries, edit to look at single event
     ccbar_pair_count = 0
     ccbar_hadron_daughters = 0
     if i % 1000 == 0:
@@ -535,126 +539,364 @@ h10_D0_vs_antiD0_pT_surface.SetOption("SURF2")
 
 
 
+# pair_histograms = []
+# pair_fit_functions = []
+# pair_fit_labels = []
+# pair_fit_annotations = []
+# width_rows = []
+# for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_phi_values in large_dict.items():
+#     hist_name = f"h_delta_phi_{pdg_from_c}_{pdg_from_cbar}_{pt_label_c}_{pt_label_cbar}_{mult_label}"
+#     c_name = getParticleName(pdg_from_c)
+#     cbar_name = getParticleName(pdg_from_cbar)
+#     # hist_title = f"#Delta#phi: D^{{0}}- #bar{{D}}^{{0}}; #Delta#phi (rad); D^{{0}}- #bar{{D}}^{{0}} pairs / bin"
+#     # hist_title = f"#Delta#phi: {c_name} vs {cbar_name}; #Delta#phi (radians); Counts"
+#     hist_title = (
+#         f"#Delta#phi: D^{{0}} ({pt_pretty[pt_label_c]}) vs "
+#         f"#bar{{D}}^{{0}} ({pt_pretty[pt_label_cbar]}), "
+#         f"{mult_pretty[mult_label]};"
+#         f"#Delta#phi (radians);Counts"
+#         )
+#     hist = ROOT.TH1F(hist_name, hist_title, 30, -PI/2, 3*PI/2)
+#     use_visible_errors(hist)
+#     for value in delta_phi_values:
+#         hist.Fill(value)
+#     hist.SetLineWidth(2)
+#     pair_histograms.append(hist)
+
+#     fits_for_hist = []
+#     if hist.GetEntries() > 0:
+#         bin_margin = hist.GetBinWidth(1)
+#         # near_window_min = -PI / 2 - bin_margin
+#         # near_window_max = PI / 2 + bin_margin
+#         near_window_min = hist.GetXaxis().GetXmin()
+#         near_window_max = hist.GetXaxis().GetXmax()
+#         # away_window_min = PI / 2 - bin_margin
+#         # away_window_max = 3 * PI / 2 + bin_margin
+#         away_window_min = hist.GetXaxis().GetXmin()
+#         away_window_max = hist.GetXaxis().GetXmax()
+
+#         near_result = fit_von_mises_region(
+#             hist,
+#             f"{hist_name}_von_mises_near",
+#             near_window_min,
+#             near_window_max,
+#             0.0,
+#             ROOT.kAzure + 2,
+#             min_entries=15,
+#         )
+#         if near_result:
+#             near_fit, near_chi2, near_ndf = near_result
+#             pair_fit_functions.append(near_fit)
+#             fits_for_hist.append(("Near", near_fit, near_chi2, near_ndf))
+
+#         away_result = fit_von_mises_region(
+#             hist,
+#             f"{hist_name}_von_mises_away",
+#             away_window_min,
+#             away_window_max,
+#             PI,
+#             ROOT.kRed + 1,
+#             min_entries=15,
+#         )
+#         if away_result:
+#             away_fit, away_chi2, away_ndf = away_result
+#             pair_fit_functions.append(away_fit)
+#             fits_for_hist.append(("Away", away_fit, away_chi2, away_ndf))
+#     if fits_for_hist:
+#         axis = hist.GetXaxis()
+#         near_low_bin = axis.FindBin(-PI / 2 + 1e-6)
+#         near_high_bin = axis.FindBin(PI / 2 - 1e-6)
+#         away_low_bin = axis.FindBin(PI / 2 + 1e-6)
+#         away_high_bin = axis.FindBin(3 * PI / 2 - 1e-6)
+#         near_yield_err = ctypes.c_double(0.0)
+#         away_yield_err = ctypes.c_double(0.0)
+#         near_yield = hist.IntegralAndError(near_low_bin, near_high_bin, near_yield_err)
+#         away_yield = hist.IntegralAndError(away_low_bin, away_high_bin, away_yield_err)
+#         # x_center = 0.5 * (axis.GetXmin() + axis.GetXmax())
+#         y_max = hist.GetMaximum()
+#         if y_max <= 0:
+#             y_max = 1.0
+#         text_start_y = 0.8 * y_max
+#         text_step = 0.12 * y_max
+#         peak_colors = {
+#             "Near": ROOT.kAzure + 2,
+#             "Away": ROOT.kRed + 1,
+#         }
+#         for idx, (label, fit_obj, _, _) in enumerate(fits_for_hist):
+#             amplitude = fit_obj.GetParameter(0)
+#             kappa = fit_obj.GetParameter(2)
+#             kappa_err = fit_obj.GetParError(2)
+#             # Convert von Mises concentration into an approximate angular width.
+#             width = np.sqrt(1.0 / kappa) if kappa > 0 else 0.0
+#             width_err = 0.5 * kappa_err / (kappa ** 1.5) if kappa > 0 else 0.0
+#             peak_height = amplitude * np.exp(kappa)
+#             if label == "Near":
+#                 peak_yield = near_yield
+#                 peak_yield_err = near_yield_err.value
+#             else:
+#                 peak_yield = away_yield
+#                 peak_yield_err = away_yield_err.value
+#             width_rows.append({
+#                 "hist_name": hist_name,
+#                 "peak": label.lower(),
+#                 "d0_pt_class": pt_label_c,
+#                 "anti_d0_pt_class": pt_label_cbar,
+#                 "multiplicity_class": mult_label,
+#                 "yield_counts": peak_yield,
+#                 "yield_err_counts": peak_yield_err,
+#                 "width_rad": width,
+#                 "width_err_rad": width_err,
+#                 "kappa": kappa,
+#                 "kappa_err": kappa_err,
+#                 "amplitude": amplitude,
+#                 "peak_height": peak_height,
+#             })
+#             text = f"{label}: Height={peak_height:.2f}, Width={width:.2f} rad"
+#             latex = ROOT.TLatex(3, text_start_y - idx * text_step, text)
+#             latex.SetTextAlign(21)  # center horizontally, align to top vertically
+#             latex.SetTextSize(0.03)
+#             latex.SetTextColor(peak_colors.get(label, ROOT.kBlack))
+#             latex.SetNDC(False)
+#             hist.GetListOfFunctions().Add(latex)
+#             pair_fit_annotations.append(latex)
 pair_histograms = []
 pair_fit_functions = []
 pair_fit_labels = []
 pair_fit_annotations = []
 width_rows = []
+
 for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_phi_values in large_dict.items():
     hist_name = f"h_delta_phi_{pdg_from_c}_{pdg_from_cbar}_{pt_label_c}_{pt_label_cbar}_{mult_label}"
     c_name = getParticleName(pdg_from_c)
     cbar_name = getParticleName(pdg_from_cbar)
-    # hist_title = f"#Delta#phi: D^{{0}}- #bar{{D}}^{{0}}; #Delta#phi (rad); D^{{0}}- #bar{{D}}^{{0}} pairs / bin"
-    # hist_title = f"#Delta#phi: {c_name} vs {cbar_name}; #Delta#phi (radians); Counts"
+
     hist_title = (
         f"#Delta#phi: D^{{0}} ({pt_pretty[pt_label_c]}) vs "
         f"#bar{{D}}^{{0}} ({pt_pretty[pt_label_cbar]}), "
         f"{mult_pretty[mult_label]};"
         f"#Delta#phi (radians);Counts"
-        )
-    hist = ROOT.TH1F(hist_name, hist_title, 30, -PI/2, 3*PI/2)
+    )
+
+    hist_xmin = -3.0 * PI / 2.0
+    hist_xmax = 5.0 * PI / 2.0
+    hist = ROOT.TH1F(hist_name, hist_title, 32, hist_xmin, hist_xmax)
     use_visible_errors(hist)
+
     for value in delta_phi_values:
         hist.Fill(value)
+        if value < PI / 2.0:
+            hist.Fill(value + 2.0 * PI)
+        else:
+            hist.Fill(value - 2.0 * PI)
+
     hist.SetLineWidth(2)
     pair_histograms.append(hist)
 
-    fits_for_hist = []
+    fit_result = None
     if hist.GetEntries() > 0:
-        bin_margin = hist.GetBinWidth(1)
-        # near_window_min = -PI / 2 - bin_margin
-        # near_window_max = PI / 2 + bin_margin
-        near_window_min = hist.GetXaxis().GetXmin()
-        near_window_max = hist.GetXaxis().GetXmax()
-        # away_window_min = PI / 2 - bin_margin
-        # away_window_max = 3 * PI / 2 + bin_margin
-        away_window_min = hist.GetXaxis().GetXmin()
-        away_window_max = hist.GetXaxis().GetXmax()
-
-        near_result = fit_von_mises_region(
+        fit_result = fit_double_von_mises_periodic(
             hist,
-            f"{hist_name}_von_mises_near",
-            near_window_min,
-            near_window_max,
-            0.0,
-            ROOT.kAzure + 2,
+            f"{hist_name}_double_von_mises_periodic",
+            ROOT.kMagenta + 2,
             min_entries=15,
         )
-        if near_result:
-            near_fit, near_chi2, near_ndf = near_result
-            pair_fit_functions.append(near_fit)
-            fits_for_hist.append(("Near", near_fit, near_chi2, near_ndf))
 
-        away_result = fit_von_mises_region(
-            hist,
-            f"{hist_name}_von_mises_away",
-            away_window_min,
-            away_window_max,
-            PI,
-            ROOT.kRed + 1,
-            min_entries=15,
+    if fit_result:
+        fit_obj, fit_chi2, fit_ndf = fit_result
+        pair_fit_functions.append(fit_obj)
+
+        fit_offset = fit_obj.GetParameter(0)
+        fit_offset_err = fit_obj.GetParError(0)
+
+        near_yield = fit_obj.GetParameter(1)
+        near_yield_err = fit_obj.GetParError(1)
+        near_kappa = fit_obj.GetParameter(2)
+        near_kappa_err = fit_obj.GetParError(2)
+
+        away_yield = fit_obj.GetParameter(3)
+        away_yield_err = fit_obj.GetParError(3)
+        away_kappa = fit_obj.GetParameter(4)
+        away_kappa_err = fit_obj.GetParError(4)
+
+        # Full fit range width in radians; for [-PI, PI] this is 2PI.
+        # The histogram fit is in counts/bin, so integrals in counts are
+        # TF1 integrals divided by the bin width.
+        fit_xmin = hist.GetXaxis().GetXmin()
+        fit_xmax = hist.GetXaxis().GetXmax()
+        delta_phi_range = hist.GetXaxis().GetXmax() - hist.GetXaxis().GetXmin()
+        bin_width = hist.GetXaxis().GetBinWidth(1)
+        n_delta_phi_bins = delta_phi_range / bin_width
+
+        # Pedestal = the lowest value of the full fitted curve. This is the
+        # horizontal line used to split UE counts from jet-like excess counts.
+        baseline = fit_obj.GetMinimum(fit_xmin, fit_xmax)
+        baseline_err = fit_offset_err
+
+        # Underlying event = everything under the pedestal line.
+        ue_yield = baseline * n_delta_phi_bins
+        ue_yield_err = baseline_err * n_delta_phi_bins
+
+        # Jet component = fitted counts not in the pedestal.
+        total_model_yield = fit_obj.Integral(fit_xmin, fit_xmax) / bin_width
+        jet_yield = max(0.0, total_model_yield - ue_yield)
+        jet_yield_err = np.sqrt(near_yield_err**2 + away_yield_err**2)
+        total_hist_counts = hist.Integral()
+        if total_hist_counts > 0:
+            ue_yield_fraction = ue_yield / total_hist_counts
+            ue_yield_fraction_err = ue_yield_err / total_hist_counts
+            jet_yield_fraction = jet_yield / total_hist_counts
+            jet_yield_fraction_err = jet_yield_err / total_hist_counts
+            total_model_yield_fraction = total_model_yield / total_hist_counts
+        else:
+            ue_yield_fraction = 0.0
+            ue_yield_fraction_err = 0.0
+            jet_yield_fraction = 0.0
+            jet_yield_fraction_err = 0.0
+            total_model_yield_fraction = 0.0
+
+        # Same approximate width definition you were already using
+        near_width = np.sqrt(1.0 / near_kappa) if near_kappa > 0 else 0.0
+        near_width_err = (
+            0.5 * near_kappa_err / (near_kappa ** 1.5)
+            if near_kappa > 0 else 0.0
         )
-        if away_result:
-            away_fit, away_chi2, away_ndf = away_result
-            pair_fit_functions.append(away_fit)
-            fits_for_hist.append(("Away", away_fit, away_chi2, away_ndf))
-    if fits_for_hist:
-        axis = hist.GetXaxis()
-        near_low_bin = axis.FindBin(-PI / 2 + 1e-6)
-        near_high_bin = axis.FindBin(PI / 2 - 1e-6)
-        away_low_bin = axis.FindBin(PI / 2 + 1e-6)
-        away_high_bin = axis.FindBin(3 * PI / 2 - 1e-6)
-        near_yield_err = ctypes.c_double(0.0)
-        away_yield_err = ctypes.c_double(0.0)
-        near_yield = hist.IntegralAndError(near_low_bin, near_high_bin, near_yield_err)
-        away_yield = hist.IntegralAndError(away_low_bin, away_high_bin, away_yield_err)
-        # x_center = 0.5 * (axis.GetXmin() + axis.GetXmax())
+
+        away_width = np.sqrt(1.0 / away_kappa) if away_kappa > 0 else 0.0
+        away_width_err = (
+            0.5 * away_kappa_err / (away_kappa ** 1.5)
+            if away_kappa > 0 else 0.0
+        )
+
+        # Peak heights are NOT yields; these are just the maximum values of each fitted component
+        near_peak_height = (
+            near_yield
+            * bin_width
+            / (2.0 * np.pi * ROOT.TMath.BesselI0(near_kappa))
+            * np.exp(near_kappa)
+        )
+        away_peak_height = (
+            away_yield
+            * bin_width
+            / (2.0 * np.pi * ROOT.TMath.BesselI0(away_kappa))
+            * np.exp(away_kappa)
+        )
+
+        # Near-side row
+        width_rows.append({
+            "hist_name": hist_name,
+            "peak": "near",
+            "d0_pt_class": pt_label_c,
+            "anti_d0_pt_class": pt_label_cbar,
+            "multiplicity_class": mult_label,
+            "yield_counts": near_yield,
+            "yield_err_counts": near_yield_err,
+            "width_rad": near_width,
+            "width_err_rad": near_width_err,
+            "kappa": near_kappa,
+            "kappa_err": near_kappa_err,
+            "amplitude": near_peak_height,   # keep column name if you do not want to rewrite the file header yet
+            "peak_height": near_peak_height,
+            "baseline_B": baseline,
+            "baseline_B_err": baseline_err,
+            "fit_offset_B": fit_offset,
+            "fit_offset_B_err": fit_offset_err,
+            "ue_yield_counts": ue_yield,
+            "ue_yield_err_counts": ue_yield_err,
+            "ue_yield_fraction": ue_yield_fraction,
+            "ue_yield_fraction_err": ue_yield_fraction_err,
+            "jet_yield_counts": jet_yield,
+            "jet_yield_err_counts": jet_yield_err,
+            "jet_yield_fraction": jet_yield_fraction,
+            "jet_yield_fraction_err": jet_yield_fraction_err,
+            "total_hist_counts": total_hist_counts,
+            "total_model_yield_counts": total_model_yield,
+            "total_model_yield_fraction": total_model_yield_fraction,
+        })
+
+        # Away-side row
+        width_rows.append({
+            "hist_name": hist_name,
+            "peak": "away",
+            "d0_pt_class": pt_label_c,
+            "anti_d0_pt_class": pt_label_cbar,
+            "multiplicity_class": mult_label,
+            "yield_counts": away_yield,
+            "yield_err_counts": away_yield_err,
+            "width_rad": away_width,
+            "width_err_rad": away_width_err,
+            "kappa": away_kappa,
+            "kappa_err": away_kappa_err,
+            "amplitude": away_peak_height,   # same note as above
+            "peak_height": away_peak_height,
+            "baseline_B": baseline,
+            "baseline_B_err": baseline_err,
+            "fit_offset_B": fit_offset,
+            "fit_offset_B_err": fit_offset_err,
+            "ue_yield_counts": ue_yield,
+            "ue_yield_err_counts": ue_yield_err,
+            "ue_yield_fraction": ue_yield_fraction,
+            "ue_yield_fraction_err": ue_yield_fraction_err,
+            "jet_yield_counts": jet_yield,
+            "jet_yield_err_counts": jet_yield_err,
+            "jet_yield_fraction": jet_yield_fraction,
+            "jet_yield_fraction_err": jet_yield_fraction_err,
+            "total_hist_counts": total_hist_counts,
+            "total_model_yield_counts": total_model_yield,
+            "total_model_yield_fraction": total_model_yield_fraction,
+        })
+
         y_max = hist.GetMaximum()
         if y_max <= 0:
             y_max = 1.0
-        text_start_y = 0.8 * y_max
-        text_step = 0.12 * y_max
-        peak_colors = {
-            "Near": ROOT.kAzure + 2,
-            "Away": ROOT.kRed + 1,
-        }
-        for idx, (label, fit_obj, _, _) in enumerate(fits_for_hist):
-            amplitude = fit_obj.GetParameter(0)
-            kappa = fit_obj.GetParameter(2)
-            kappa_err = fit_obj.GetParError(2)
-            # Convert von Mises concentration into an approximate angular width.
-            width = np.sqrt(1.0 / kappa) if kappa > 0 else 0.0
-            width_err = 0.5 * kappa_err / (kappa ** 1.5) if kappa > 0 else 0.0
-            peak_height = amplitude * np.exp(kappa)
-            if label == "Near":
-                peak_yield = near_yield
-                peak_yield_err = near_yield_err.value
-            else:
-                peak_yield = away_yield
-                peak_yield_err = away_yield_err.value
-            width_rows.append({
-                "hist_name": hist_name,
-                "peak": label.lower(),
-                "d0_pt_class": pt_label_c,
-                "anti_d0_pt_class": pt_label_cbar,
-                "multiplicity_class": mult_label,
-                "yield_counts": peak_yield,
-                "yield_err_counts": peak_yield_err,
-                "width_rad": width,
-                "width_err_rad": width_err,
-                "kappa": kappa,
-                "kappa_err": kappa_err,
-                "amplitude": amplitude,
-                "peak_height": peak_height,
-            })
-            text = f"{label}: Height={peak_height:.2f}, Width={width:.2f} rad"
-            latex = ROOT.TLatex(3, text_start_y - idx * text_step, text)
-            latex.SetTextAlign(21)  # center horizontally, align to top vertically
-            latex.SetTextSize(0.03)
-            latex.SetTextColor(peak_colors.get(label, ROOT.kBlack))
-            latex.SetNDC(False)
-            hist.GetListOfFunctions().Add(latex)
-            pair_fit_annotations.append(latex)
+
+        text_start_y = 0.82 * y_max
+        text_step = 0.10 * y_max
+
+        fit_summary = f"#chi^{{2}}/ndf = {fit_chi2:.1f}/{int(fit_ndf) if fit_ndf else 0}"
+        latex_fit = ROOT.TLatex(0.0, text_start_y, fit_summary)
+        latex_fit.SetTextAlign(21)
+        latex_fit.SetTextSize(0.03)
+        latex_fit.SetTextColor(ROOT.kMagenta + 2)
+        latex_fit.SetNDC(False)
+        hist.GetListOfFunctions().Add(latex_fit)
+        pair_fit_annotations.append(latex_fit)
+
+        ue_text = (
+            f"UE={ue_yield:.2f} ({ue_yield_fraction:.3f}), "
+            f"Jet={jet_yield:.2f} ({jet_yield_fraction:.3f})"
+        )
+        latex_ue = ROOT.TLatex(0.0, text_start_y - text_step, ue_text)
+        latex_ue.SetTextAlign(21)
+        latex_ue.SetTextSize(0.03)
+        latex_ue.SetTextColor(ROOT.kGreen + 2)
+        latex_ue.SetNDC(False)
+        hist.GetListOfFunctions().Add(latex_ue)
+        pair_fit_annotations.append(latex_ue)
+
+        pedestal_line = ROOT.TLine(fit_xmin, baseline, fit_xmax, baseline)
+        pedestal_line.SetLineColor(ROOT.kGreen + 2)
+        pedestal_line.SetLineStyle(2)
+        pedestal_line.SetLineWidth(2)
+        hist.GetListOfFunctions().Add(pedestal_line)
+        pair_fit_annotations.append(pedestal_line)
+
+        near_text = f"Near: Y={near_yield:.2f}, Width={near_width:.2f} rad"
+        latex_near = ROOT.TLatex(0.0, text_start_y - 2.0 * text_step, near_text)
+        latex_near.SetTextAlign(21)
+        latex_near.SetTextSize(0.03)
+        latex_near.SetTextColor(ROOT.kAzure + 2)
+        latex_near.SetNDC(False)
+        hist.GetListOfFunctions().Add(latex_near)
+        pair_fit_annotations.append(latex_near)
+
+        away_text = f"Away: Y={away_yield:.2f}, Width={away_width:.2f} rad"
+        latex_away = ROOT.TLatex(0.0, text_start_y - 3.0 * text_step, away_text)
+        latex_away.SetTextAlign(21)
+        latex_away.SetTextSize(0.03)
+        latex_away.SetTextColor(ROOT.kRed + 1)
+        latex_away.SetNDC(False)
+        hist.GetListOfFunctions().Add(latex_away)
+        pair_fit_annotations.append(latex_away)
 
 # Style for ROOT histogram
 # h1_delta_phi.SetLineColor(ROOT.kBlue)
@@ -688,12 +930,40 @@ for fit_func in pair_fit_functions:
     fit_func.Write()
 
 with open(width_outpath, "w", encoding="utf-8") as width_file:
+    # width_file.write(
+    #     "hist_name\tpeak\td0_pt_class\tanti_d0_pt_class\tmultiplicity_class\t"
+    #     "yield_counts\tyield_err_counts\twidth_rad\twidth_err_rad\t"
+    #     "kappa\tkappa_err\tamplitude\tpeak_height\n"
+    # )
     width_file.write(
-        "hist_name\tpeak\td0_pt_class\tanti_d0_pt_class\tmultiplicity_class\t"
-        "yield_counts\tyield_err_counts\twidth_rad\twidth_err_rad\t"
-        "kappa\tkappa_err\tamplitude\tpeak_height\n"
+    "hist_name\tpeak\td0_pt_class\tanti_d0_pt_class\tmultiplicity_class\t"
+    "yield_counts\tyield_err_counts\twidth_rad\twidth_err_rad\t"
+    "kappa\tkappa_err\tamplitude\tpeak_height\t"
+    "baseline_B\tbaseline_B_err\t"
+    "fit_offset_B\tfit_offset_B_err\t"
+    "ue_yield_counts\tue_yield_err_counts\t"
+    "ue_yield_fraction\tue_yield_fraction_err\t"
+    "jet_yield_counts\tjet_yield_err_counts\t"
+    "jet_yield_fraction\tjet_yield_fraction_err\t"
+    "total_hist_counts\t"
+    "total_model_yield_counts\ttotal_model_yield_fraction\n"
     )
     for row in width_rows:
+        # width_file.write(
+        #     f"{row['hist_name']}\t"
+        #     f"{row['peak']}\t"
+        #     f"{row['d0_pt_class']}\t"
+        #     f"{row['anti_d0_pt_class']}\t"
+        #     f"{row['multiplicity_class']}\t"
+        #     f"{row['yield_counts']:.6f}\t"
+        #     f"{row['yield_err_counts']:.6f}\t"
+        #     f"{row['width_rad']:.6f}\t"
+        #     f"{row['width_err_rad']:.6f}\t"
+        #     f"{row['kappa']:.6f}\t"
+        #     f"{row['kappa_err']:.6f}\t"
+        #     f"{row['amplitude']:.6f}\t"
+        #     f"{row['peak_height']:.6f}\n"
+        # )
         width_file.write(
             f"{row['hist_name']}\t"
             f"{row['peak']}\t"
@@ -707,8 +977,23 @@ with open(width_outpath, "w", encoding="utf-8") as width_file:
             f"{row['kappa']:.6f}\t"
             f"{row['kappa_err']:.6f}\t"
             f"{row['amplitude']:.6f}\t"
-            f"{row['peak_height']:.6f}\n"
-        )
+            f"{row['peak_height']:.6f}\t"
+            f"{row['baseline_B']:.6f}\t"
+            f"{row['baseline_B_err']:.6f}\t"
+            f"{row['fit_offset_B']:.6f}\t"
+            f"{row['fit_offset_B_err']:.6f}\t"
+            f"{row['ue_yield_counts']:.6f}\t"
+            f"{row['ue_yield_err_counts']:.6f}\t"
+            f"{row['ue_yield_fraction']:.8f}\t"
+            f"{row['ue_yield_fraction_err']:.8f}\t"
+            f"{row['jet_yield_counts']:.6f}\t"
+            f"{row['jet_yield_err_counts']:.6f}\t"
+            f"{row['jet_yield_fraction']:.8f}\t"
+            f"{row['jet_yield_fraction_err']:.8f}\t"
+            f"{row['total_hist_counts']:.6f}\t"
+            f"{row['total_model_yield_counts']:.6f}\t"
+            f"{row['total_model_yield_fraction']:.8f}\n"
+            )
 
 end_time = time.perf_counter()
 elapsed_time = end_time - start_time

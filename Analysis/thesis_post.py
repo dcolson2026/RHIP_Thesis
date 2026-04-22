@@ -1,3 +1,5 @@
+from datetime import date
+import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -5,13 +7,23 @@ import matplotlib.pyplot as plt
 # ============================================================
 # USER SETTINGS
 # ============================================================
+today = date.today()
 
-filename = "/home/daniel/LibraFiles/CleanThesis/RootOutputs/4_8_2026_thesis_hard_von_mises_widths.txt"
 
-# Choose observable: "width" or "yield"
-observable = "width"
+filename = "/home/daniel/LibraFiles/CleanThesis/RootOutputs/4_20_2026_thesis_MB_von_mises_widths.txt"
 
-# Choose peak: None, "near", or "away"
+# Choose observable:
+#   "width"
+#   "yield"
+#   "baseline_B"
+#   "ue_yield_counts"
+#   "jet_yield_counts"
+#   "ue_yield_fraction"
+#   "jet_yield_fraction"
+observable = "jet_yield_fraction"
+
+# Choose peak for peak-specific observables: None, "near", or "away".
+# Ignored for global observables such as the pedestal, UE yield, and jet yield.
 peak_to_plot = "near"
 
 # Choose scan direction:
@@ -39,7 +51,7 @@ max_abs_error = None
 
 # Relative error cut: remove points with err/value > this
 # Set to None to disable
-max_rel_error = 1.0   # e.g. 1.0 = 100%
+max_rel_error = None   # e.g. 1.0 = 100%
 
 # If value is very close to zero, avoid division issues
 small_value_epsilon = 1e-12
@@ -67,26 +79,26 @@ ylim_percentiles = (5, 95)
 # BIN DEFINITIONS
 # ============================================================
 
-# PT_BINS = [
-#     ("first_pT", 0.0, 0.5),
-#     ("second_pT", 0.5, 1.0),
-#     ("third_pT", 1.0, 1.5),
-#     ("fourth_pT", 1.5, 2.0),
-#     ("fifth_pT", 2.0, 2.5),
-#     ("sixth_pT", 2.5, 3.0),
-#     ("seventh_pT", 3.0, 3.5),
-#     ("eighth_pT", 3.5, 8.0),
-# ]
 PT_BINS = [
-    ("first_pT", 0.0, 1.0),
-    ("second_pT", 1.0, 2.0),
-    ("third_pT", 2.0, 3.0),
-    ("fourth_pT", 3.0, 4.0),
-    ("fifth_pT", 4.0, 5.0),
-    ("sixth_pT", 5.0, 6.0),
-    ("seventh_pT", 6.0, 7.0),
-    ("eighth_pT", 7.0, 8.0),
+    ("first_pT", 0.0, 0.5),
+    ("second_pT", 0.5, 1.0),
+    ("third_pT", 1.0, 1.5),
+    ("fourth_pT", 1.5, 2.0),
+    ("fifth_pT", 2.0, 2.5),
+    ("sixth_pT", 2.5, 3.0),
+    ("seventh_pT", 3.0, 3.5),
+    ("eighth_pT", 3.5, 8.0),
 ]
+# PT_BINS = [
+#     ("first_pT", 0.0, 1.0),
+#     ("second_pT", 1.0, 2.0),
+#     ("third_pT", 2.0, 3.0),
+#     ("fourth_pT", 3.0, 4.0),
+#     ("fifth_pT", 4.0, 5.0),
+#     ("sixth_pT", 5.0, 6.0),
+#     ("seventh_pT", 6.0, 7.0),
+#     ("eighth_pT", 7.0, 8.0),
+# ]
 
 
 MULT_BINS = [
@@ -112,13 +124,34 @@ def pt_pretty_label(pt_class):
 def pt_axis_ticklabels():
     return [pt_pretty_label(label) for label in pt_order]
 
+# def observable_columns(obs):
+#     if obs == "width":
+#         return "width_rad", "width_err_rad", "Width [rad]"
+#     elif obs == "yield":
+#         return "yield_counts", "yield_err_counts", "Yield [counts]"
+#     else:
+#         raise ValueError("observable must be 'width' or 'yield'")
 def observable_columns(obs):
     if obs == "width":
         return "width_rad", "width_err_rad", "Width [rad]"
     elif obs == "yield":
         return "yield_counts", "yield_err_counts", "Yield [counts]"
+    elif obs == "baseline_B":
+        return "baseline_B", "baseline_B_err", "Pedestal height [counts/bin]"
+    elif obs == "ue_yield_counts":
+        return "ue_yield_counts", "ue_yield_err_counts", "UE Yield [counts]"
+    elif obs == "jet_yield_counts":
+        return "jet_yield_counts", "jet_yield_err_counts", "Jet Yield [counts]"
+    elif obs == "ue_yield_fraction":
+        return "ue_yield_fraction", "ue_yield_fraction_err", "UE Yield / histogram counts"
+    elif obs == "jet_yield_fraction":
+        return "jet_yield_fraction", "jet_yield_fraction_err", "Jet Yield / histogram counts"
     else:
-        raise ValueError("observable must be 'width' or 'yield'")
+        raise ValueError(
+            "observable must be one of: "
+            "'width', 'yield', 'baseline_B', 'ue_yield_counts', 'jet_yield_counts', "
+            "'ue_yield_fraction', or 'jet_yield_fraction'"
+        )
 
 def scan_config(scan_axis):
     if scan_axis == "d0":
@@ -158,9 +191,19 @@ df["multiplicity_class"] = pd.Categorical(df["multiplicity_class"], categories=m
 df["d0_pt_mid"] = df["d0_pt_class"].map(pt_midpoints).astype(float)
 df["anti_d0_pt_mid"] = df["anti_d0_pt_class"].map(pt_midpoints).astype(float)
 
-# Restrict peak if requested
-if peak_to_plot is not None:
-    df = df[df["peak"] == peak_to_plot].copy()
+if "total_hist_counts" not in df.columns and "total_model_yield_counts" in df.columns:
+    # Backward-compatible fallback for older output files. Regenerate the
+    # analysis output to normalize by the true histogram count integral.
+    df["total_hist_counts"] = df["total_model_yield_counts"]
+
+if "total_hist_counts" in df.columns:
+    denom = df["total_hist_counts"].replace(0, np.nan)
+    if "ue_yield_fraction" not in df.columns and "ue_yield_counts" in df.columns:
+        df["ue_yield_fraction"] = df["ue_yield_counts"] / denom
+        df["ue_yield_fraction_err"] = df["ue_yield_err_counts"] / denom
+    if "jet_yield_fraction" not in df.columns and "jet_yield_counts" in df.columns:
+        df["jet_yield_fraction"] = df["jet_yield_counts"] / denom
+        df["jet_yield_fraction_err"] = df["jet_yield_err_counts"] / denom
 
 # ============================================================
 # CHOOSE OBSERVABLE AND SCAN CONFIG
@@ -168,6 +211,20 @@ if peak_to_plot is not None:
 
 value_col, err_col, y_label = observable_columns(observable)
 cfg = scan_config(scan_axis)
+global_observable = observable in {
+    "baseline_B",
+    "ue_yield_counts",
+    "jet_yield_counts",
+    "ue_yield_fraction",
+    "jet_yield_fraction",
+}
+
+if global_observable:
+    # These observables are written on both the near and away rows for the same
+    # fit. Keep one copy so the plotter does not combine duplicate points.
+    df = df[df["peak"] == "near"].copy()
+elif peak_to_plot is not None:
+    df = df[df["peak"] == peak_to_plot].copy()
 
 x_class_col = cfg["x_class_col"]
 fixed_class_col = cfg["fixed_class_col"]
@@ -296,10 +353,13 @@ linestyle_map = {
     "high_mult": "-.",
 }
 
-peaks_to_loop = sorted(df["peak"].dropna().unique())
+if save_figures:
+    os.makedirs(output_dir, exist_ok=True)
+
+peaks_to_loop = ["global"] if global_observable else sorted(df["peak"].dropna().unique())
 
 for peak in peaks_to_loop:
-    peak_df = df[df["peak"] == peak].copy()
+    peak_df = df.copy() if global_observable else df[df["peak"] == peak].copy()
 
     for fixed_pt_class in pt_order:
         sub = peak_df[peak_df[fixed_class_col] == fixed_pt_class].copy()
@@ -351,11 +411,17 @@ for peak in peaks_to_loop:
 
         plt.xlabel(x_label, fontsize=12)
         plt.ylabel(y_label, fontsize=12)
-        plt.title(
-            f"{peak.capitalize()}-side {observable} vs pT\n"
-            f"Fixed {fixed_label_tex}: {fixed_label}",
-            fontsize=13
-        )
+        if global_observable:
+            title = f"{observable} vs pT\nFixed {fixed_label_tex}: {fixed_label}"
+            output_peak_tag = "global"
+        else:
+            title = (
+                f"{peak.capitalize()}-side {observable} vs pT\n"
+                f"Fixed {fixed_label_tex}: {fixed_label}"
+            )
+            output_peak_tag = peak
+
+        plt.title(title, fontsize=13)
 
         plt.xticks(
             [pt_midpoints[label] for label in pt_order],
@@ -374,7 +440,7 @@ for peak in peaks_to_loop:
         if save_figures:
             outname = (
                 f"{output_dir}/"
-                f"{observable}_{peak}_{filename_tag}_{fixed_pt_class}.png"
+                f"{today.month}_{today.day}_{today.year}_{observable}_{output_peak_tag}_{filename_tag}_{fixed_pt_class}.png"
             )
             plt.savefig(outname, bbox_inches="tight")
 

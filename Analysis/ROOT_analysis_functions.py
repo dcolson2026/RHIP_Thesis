@@ -382,8 +382,8 @@ def fit_double_von_mises_periodic(
     Fit the full histogram with a periodic double-von-Mises model:
 
         f(phi) = baseline
-               + Y_NS / (2*pi*I0(kappa_NS)) * exp(kappa_NS * cos(phi))
-               + Y_AS / (2*pi*I0(kappa_AS)) * exp(kappa_AS * cos(phi - pi))
+               + bin_width * Y_NS / (2*pi*I0(kappa_NS)) * exp(kappa_NS * cos(phi))
+               + bin_width * Y_AS / (2*pi*I0(kappa_AS)) * exp(kappa_AS * cos(phi - pi))
 
     Physics meaning of parameters:
         par[0] = baseline
@@ -414,9 +414,19 @@ def fit_double_von_mises_periodic(
 
     # Crude initialization from the histogram itself
     nbins = histogram.GetNbinsX()
+    bin_width = axis.GetBinWidth(1) if nbins > 0 else 1.0
     hist_max = histogram.GetMaximum()
     hist_mean = total_entries / nbins if nbins > 0 else 0.0
-    baseline_guess = max(0.0, min(hist_mean, 0.5 * hist_max))
+    positive_bin_contents = [
+        histogram.GetBinContent(bin_idx)
+        for bin_idx in range(1, nbins + 1)
+        if histogram.GetBinContent(bin_idx) > 0.0
+    ]
+    baseline_guess = (
+        min(positive_bin_contents)
+        if positive_bin_contents
+        else max(0.0, min(hist_mean, 0.5 * hist_max))
+    )
 
     # Split the histogram into rough near/away windows only for starting guesses.
     # This does NOT define the fit model; the fit is still global.
@@ -445,9 +455,16 @@ def fit_double_von_mises_periodic(
         yield_as = par[3]
         kappa_as = par[4]
 
-        # Normalized von Mises components so yield parameters are meaningful
-        ns_norm = yield_ns / (2.0 * math.pi * ROOT.TMath.BesselI0(kappa_ns))
-        as_norm = yield_as / (2.0 * math.pi * ROOT.TMath.BesselI0(kappa_as))
+        # Histograms are fitted as counts/bin. The bin-width factor keeps
+        # yield parameters in true integrated counts over delta phi.
+        ns_norm = (
+            yield_ns * bin_width
+            / (2.0 * math.pi * ROOT.TMath.BesselI0(kappa_ns))
+        )
+        as_norm = (
+            yield_as * bin_width
+            / (2.0 * math.pi * ROOT.TMath.BesselI0(kappa_as))
+        )
 
         near = ns_norm * math.exp(kappa_ns * math.cos(phi))
         away = as_norm * math.exp(kappa_as * math.cos(phi - math.pi))
