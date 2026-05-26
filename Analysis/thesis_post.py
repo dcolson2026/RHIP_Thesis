@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 today = date.today()
 
 
-filename = "/home/daniel/LibraFiles/CleanThesis/RootOutputs/4_20_2026_thesis_MB_von_mises_widths.txt"
+filename = "/home/daniel/LibraFiles/CleanThesis/RootOutputs/4_22_2026_thesis_MB_von_mises_widths_flowstate.txt"
 
 # Choose observable:
 #   "width"
@@ -20,7 +20,7 @@ filename = "/home/daniel/LibraFiles/CleanThesis/RootOutputs/4_20_2026_thesis_MB_
 #   "jet_yield_counts"
 #   "ue_yield_fraction"
 #   "jet_yield_fraction"
-observable = "jet_yield_fraction"
+observable = "width"
 
 # Choose peak for peak-specific observables: None, "near", or "away".
 # Ignored for global observables such as the pedestal, UE yield, and jet yield.
@@ -79,16 +79,16 @@ ylim_percentiles = (5, 95)
 # BIN DEFINITIONS
 # ============================================================
 
-PT_BINS = [
-    ("first_pT", 0.0, 0.5),
-    ("second_pT", 0.5, 1.0),
-    ("third_pT", 1.0, 1.5),
-    ("fourth_pT", 1.5, 2.0),
-    ("fifth_pT", 2.0, 2.5),
-    ("sixth_pT", 2.5, 3.0),
-    ("seventh_pT", 3.0, 3.5),
-    ("eighth_pT", 3.5, 8.0),
-]
+# PT_BINS = [
+#     ("first_pT", 0.0, 0.5),
+#     ("second_pT", 0.5, 1.0),
+#     ("third_pT", 1.0, 1.5),
+#     ("fourth_pT", 1.5, 2.0),
+#     ("fifth_pT", 2.0, 2.5),
+#     ("sixth_pT", 2.5, 3.0),
+#     ("seventh_pT", 3.0, 3.5),
+#     ("eighth_pT", 3.5, 8.0),
+# ]
 # PT_BINS = [
 #     ("first_pT", 0.0, 1.0),
 #     ("second_pT", 1.0, 2.0),
@@ -99,6 +99,12 @@ PT_BINS = [
 #     ("seventh_pT", 6.0, 7.0),
 #     ("eighth_pT", 7.0, 8.0),
 # ]
+PT_BINS = [
+    ("first_pT", 0.0, 1.5),
+    ("second_pT", 1.5, 3),
+    ("third_pT", 3, 4.5),
+    ("fourth_pT", 4.5, 10),
+]
 
 
 MULT_BINS = [

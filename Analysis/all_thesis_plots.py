@@ -30,6 +30,98 @@ def use_visible_errors(hist):
     hist.SetMarkerStyle(20)
     hist.SetMarkerSize(0.7)
 
+
+def evaluate_fit_summary_observables(fit_obj, fit_xmin, fit_xmax, bin_width):
+    baseline = fit_obj.GetMinimum(fit_xmin, fit_xmax)
+    total_model_yield = fit_obj.Integral(fit_xmin, fit_xmax) / bin_width
+    return np.array([baseline, total_model_yield], dtype=float)
+
+
+def evaluate_fit_summary_observables_at_params(
+    fit_obj,
+    params,
+    fit_xmin,
+    fit_xmax,
+    bin_width,
+):
+    original_params = [fit_obj.GetParameter(i) for i in range(fit_obj.GetNpar())]
+    for index, value in enumerate(params):
+        fit_obj.SetParameter(index, float(value))
+
+    try:
+        return evaluate_fit_summary_observables(fit_obj, fit_xmin, fit_xmax, bin_width)
+    finally:
+        for index, value in enumerate(original_params):
+            fit_obj.SetParameter(index, float(value))
+
+
+def build_fit_parameter_covariance(fit_obj, fit_status_obj):
+    npar = fit_obj.GetNpar()
+    covariance = np.zeros((npar, npar), dtype=float)
+    for i in range(npar):
+        covariance[i, i] = fit_obj.GetParError(i) ** 2
+
+    if hasattr(fit_status_obj, "Get"):
+        fit_result = fit_status_obj.Get()
+        if fit_result:
+            root_covariance = fit_result.GetCovarianceMatrix()
+            for i in range(npar):
+                for j in range(npar):
+                    covariance[i, j] = root_covariance[i][j]
+
+    return covariance
+
+
+def propagate_fit_summary_covariance(
+    fit_obj,
+    fit_xmin,
+    fit_xmax,
+    bin_width,
+    parameter_covariance,
+):
+    npar = fit_obj.GetNpar()
+    params = np.array([fit_obj.GetParameter(i) for i in range(npar)], dtype=float)
+    param_errs = np.array([fit_obj.GetParError(i) for i in range(npar)], dtype=float)
+    lower_bounds = np.array([0.0, 0.0, 1e-3, 0.0, 1e-3], dtype=float)
+    values = evaluate_fit_summary_observables_at_params(
+        fit_obj,
+        params,
+        fit_xmin,
+        fit_xmax,
+        bin_width,
+    )
+
+    jacobian = np.zeros((2, npar), dtype=float)
+    for index in range(npar):
+        step = max(param_errs[index], 1e-6 * (abs(params[index]) + 1.0))
+        params_up = params.copy()
+        params_up[index] = params[index] + step
+        values_up = evaluate_fit_summary_observables_at_params(
+            fit_obj,
+            params_up,
+            fit_xmin,
+            fit_xmax,
+            bin_width,
+        )
+
+        lower_value = max(lower_bounds[index], params[index] - step)
+        if lower_value < params[index]:
+            params_down = params.copy()
+            params_down[index] = lower_value
+            values_down = evaluate_fit_summary_observables_at_params(
+                fit_obj,
+                params_down,
+                fit_xmin,
+                fit_xmax,
+                bin_width,
+            )
+            jacobian[:, index] = (values_up - values_down) / (params_up[index] - lower_value)
+        else:
+            jacobian[:, index] = (values_up - values) / (params_up[index] - params[index])
+
+    observable_covariance = jacobian @ parameter_covariance @ jacobian.T
+    return values, observable_covariance
+
 MULT_CLASSES_MB = [7.9, 19.6, 300] # was 65.7 but upper bound should not matter
 MULT_CLASSES_HARD = [29.2, 46.3, 300] # was 90.2 but upper bound should not matter
 MULT_CLASSES_HI = [23.4, 51.1, 300] # was 128.6 but upper bound should not matter
@@ -116,10 +208,10 @@ mult_pretty = {
     "high_mult": "high multiplicity",
 }
 
-outpath = f"/home/daniel/LibraFiles/CleanThesis/RootOutputs/{today.month}_{today.day}_{today.year}_thesis_{file_type}_flowstate.root"
+outpath = f"/home/daniel/LibraFiles/CleanThesis/RootOutputs/{today.month}_{today.day}_{today.year}_thesis_{file_type}_hard15.root"
 width_outpath = (
     f"/home/daniel/LibraFiles/CleanThesis/RootOutputs/"
-    f"{today.month}_{today.day}_{today.year}_thesis_{file_type}_von_mises_widths_flowstate.txt"
+    f"{today.month}_{today.day}_{today.year}_thesis_{file_type}_von_mises_widths_hard15.txt"
 )
 # Open the ROOT file
 # root_file = ROOT.TFile(fpath, "READ") # USER INPUT
@@ -209,7 +301,7 @@ large_dict = {}
 m_events = tree.GetEntries()
 print(m_events, "events in total")
 print(file_type)
-for i in range(m_events): # m_entries, edit to look at single event
+for i in range(4500000): # m_entries, edit to look at single event
     ccbar_pair_count = 0
     ccbar_hadron_daughters = 0
     if i % 1000 == 0:
@@ -296,7 +388,8 @@ for i in range(m_events): # m_entries, edit to look at single event
                 cbar_hadron_daughters.append(daughter_2_index)
         
         # finds ccbar pair and confirms that they came from the same mother particle (so they are paired)
-        if particle_pdg == 4 and next_particle_pdg == -4 and mother_1_index == next_particle_mother_1_index:
+        if particle_pdg == 4 and next_particle_pdg == -4 and mother_1_index == next_particle_mother_1_index and (21 <= np.abs(particle_status) <= 29):
+            print("first", particle_status, mother_1_index == next_particle_mother_1_index)
             ccbar_pair_count += 1
             h1_all_ccbar_delta_phi.Fill(caldeltaphi(particle_phi, next_particle_phi))
             following_charm_dfs(j, pdg, daughter_1, daughter_2, c_quark_daughter_indices_list)
@@ -304,7 +397,8 @@ for i in range(m_events): # m_entries, edit to look at single event
         
         # finds ccbar this time if ordering is reversed (doubtful, but just in case)
         # very same to assume that there is only one ccbar pair per event (if not zero) due to low cross section
-        if particle_pdg == -4 and next_particle_pdg == 4 and mother_1_index == next_particle_mother_1_index:
+        if particle_pdg == -4 and next_particle_pdg == 4 and mother_1_index == next_particle_mother_1_index and (21 <= np.abs(particle_status) <= 29):
+            # print("second", particle_status)
             ccbar_pair_count += 1
             h1_all_ccbar_delta_phi.Fill(caldeltaphi(particle_phi, next_particle_phi))
             following_charm_dfs(j, pdg, daughter_1, daughter_2, cbar_quark_daughter_indices_list)
@@ -702,7 +796,7 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
         )
 
     if fit_result:
-        fit_obj, fit_chi2, fit_ndf = fit_result
+        fit_obj, fit_chi2, fit_ndf, fit_status, fit_status_obj = fit_result
         pair_fit_functions.append(fit_obj)
 
         fit_offset = fit_obj.GetParameter(0)
@@ -719,27 +813,49 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
         away_kappa_err = fit_obj.GetParError(4)
 
         # Full fit range width in radians; for [-PI, PI] this is 2PI.
-        # The histogram fit is in counts/bin, so integrals in counts are
-        # TF1 integrals divided by the bin width.
+        # The histogram fit is in counts/bin. The model parameters are:
+        #   par[0] = constant baseline in counts/bin
+        #   par[1] = near-side integrated yield in counts
+        #   par[3] = away-side integrated yield in counts
+        # Use those parameter definitions directly so the central values and
+        # propagated errors refer to the same observables.
         fit_xmin = hist.GetXaxis().GetXmin()
         fit_xmax = hist.GetXaxis().GetXmax()
         delta_phi_range = hist.GetXaxis().GetXmax() - hist.GetXaxis().GetXmin()
         bin_width = hist.GetXaxis().GetBinWidth(1)
         n_delta_phi_bins = delta_phi_range / bin_width
+        parameter_covariance = build_fit_parameter_covariance(fit_obj, fit_status_obj)
+        summary_values, summary_covariance = propagate_fit_summary_covariance(
+            fit_obj,
+            fit_xmin,
+            fit_xmax,
+            bin_width,
+            parameter_covariance,
+        )
 
-        # Pedestal = the lowest value of the full fitted curve. This is the
-        # horizontal line used to split UE counts from jet-like excess counts.
-        baseline = fit_obj.GetMinimum(fit_xmin, fit_xmax)
-        baseline_err = fit_offset_err
+        # Pedestal = the minimum of the full fitted curve. Keep that physics
+        # definition for the central value and propagate its uncertainty from
+        # the full fit covariance.
+        baseline = summary_values[0]
+        baseline_var = max(0.0, summary_covariance[0, 0])
+        baseline_err = np.sqrt(baseline_var)
 
-        # Underlying event = everything under the pedestal line.
+        # Underlying event = everything under the minimum-based pedestal line.
         ue_yield = baseline * n_delta_phi_bins
-        ue_yield_err = baseline_err * n_delta_phi_bins
+        ue_yield_var = (n_delta_phi_bins ** 2) * baseline_var
+        ue_yield_err = np.sqrt(max(0.0, ue_yield_var))
 
-        # Jet component = fitted counts not in the pedestal.
-        total_model_yield = fit_obj.Integral(fit_xmin, fit_xmax) / bin_width
+        # Jet component = full fitted yield minus the pedestal contribution.
+        total_model_yield = summary_values[1]
+        total_model_yield_var = max(0.0, summary_covariance[1, 1])
+        total_model_ue_cov = n_delta_phi_bins * summary_covariance[1, 0]
         jet_yield = max(0.0, total_model_yield - ue_yield)
-        jet_yield_err = np.sqrt(near_yield_err**2 + away_yield_err**2)
+        jet_yield_var = (
+            total_model_yield_var
+            + ue_yield_var
+            - 2.0 * total_model_ue_cov
+        )
+        jet_yield_err = np.sqrt(max(0.0, jet_yield_var))
         total_hist_counts = hist.Integral()
         if total_hist_counts > 0:
             ue_yield_fraction = ue_yield / total_hist_counts
@@ -811,6 +927,8 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
             "total_hist_counts": total_hist_counts,
             "total_model_yield_counts": total_model_yield,
             "total_model_yield_fraction": total_model_yield_fraction,
+            "fit_status": fit_status,
+            "fit_status_ok": int(fit_status == 0),
         })
 
         # Away-side row
@@ -843,6 +961,8 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
             "total_hist_counts": total_hist_counts,
             "total_model_yield_counts": total_model_yield,
             "total_model_yield_fraction": total_model_yield_fraction,
+            "fit_status": fit_status,
+            "fit_status_ok": int(fit_status == 0),
         })
 
         y_max = hist.GetMaximum()
@@ -852,7 +972,10 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
         text_start_y = 0.82 * y_max
         text_step = 0.10 * y_max
 
-        fit_summary = f"#chi^{{2}}/ndf = {fit_chi2:.1f}/{int(fit_ndf) if fit_ndf else 0}"
+        fit_summary = (
+            f"#chi^{{2}}/ndf = {fit_chi2:.1f}/{int(fit_ndf) if fit_ndf else 0}, "
+            f"status={fit_status}"
+        )
         latex_fit = ROOT.TLatex(0.0, text_start_y, fit_summary)
         latex_fit.SetTextAlign(21)
         latex_fit.SetTextSize(0.03)
@@ -881,6 +1004,8 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
         pair_fit_annotations.append(pedestal_line)
 
         near_text = f"Near: Y={near_yield:.2f}, Width={near_width:.2f} rad"
+        if fit_status != 0:
+            near_text += " (check fit)"
         latex_near = ROOT.TLatex(0.0, text_start_y - 2.0 * text_step, near_text)
         latex_near.SetTextAlign(21)
         latex_near.SetTextSize(0.03)
@@ -890,6 +1015,8 @@ for (pdg_from_c, pdg_from_cbar, pt_label_c, pt_label_cbar, mult_label), delta_ph
         pair_fit_annotations.append(latex_near)
 
         away_text = f"Away: Y={away_yield:.2f}, Width={away_width:.2f} rad"
+        if fit_status != 0:
+            away_text += " (check fit)"
         latex_away = ROOT.TLatex(0.0, text_start_y - 3.0 * text_step, away_text)
         latex_away.SetTextAlign(21)
         latex_away.SetTextSize(0.03)
@@ -946,7 +1073,8 @@ with open(width_outpath, "w", encoding="utf-8") as width_file:
     "jet_yield_counts\tjet_yield_err_counts\t"
     "jet_yield_fraction\tjet_yield_fraction_err\t"
     "total_hist_counts\t"
-    "total_model_yield_counts\ttotal_model_yield_fraction\n"
+    "total_model_yield_counts\ttotal_model_yield_fraction\t"
+    "fit_status\tfit_status_ok\n"
     )
     for row in width_rows:
         # width_file.write(
@@ -992,8 +1120,10 @@ with open(width_outpath, "w", encoding="utf-8") as width_file:
             f"{row['jet_yield_fraction_err']:.8f}\t"
             f"{row['total_hist_counts']:.6f}\t"
             f"{row['total_model_yield_counts']:.6f}\t"
-            f"{row['total_model_yield_fraction']:.8f}\n"
-            )
+            f"{row['total_model_yield_fraction']:.8f}\t"
+            f"{row['fit_status']}\t"
+            f"{row['fit_status_ok']}\n"
+        )
 
 end_time = time.perf_counter()
 elapsed_time = end_time - start_time

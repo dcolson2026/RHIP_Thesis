@@ -395,7 +395,8 @@ def fit_double_von_mises_periodic(
     Near side is fixed at mu = 0.
     Away side is fixed at mu = pi.
 
-    Returns (TF1, chi2, ndf) if fit succeeds, otherwise None.
+    Returns (TF1, chi2, ndf, status) if ROOT produced a fit object,
+    otherwise None.
     """
     import ROOT
     import math
@@ -512,21 +513,22 @@ def fit_double_von_mises_periodic(
 
     if hasattr(fit_status, "Status"):
         status = fit_status.Status()
-        if status != 0:
-            print(f"[double_vm] Fit failed for {fit_name}, status = {status}")
-            return None
     else:
-        if fit_status != 0:
-            print(f"[double_vm] Fit failed for {fit_name}, status = {fit_status}")
-            return None
+        status = fit_status
 
     chi2 = fit.GetChisquare()
     ndf = fit.GetNDF()
-    print(
-        f"[double_vm] Fit OK for {fit_name}: "
-        f"chi2/ndf = {chi2:.1f}/{int(ndf) if ndf else 0}"
-    )
-    return fit, chi2, ndf
+    if status == 0:
+        print(
+            f"[double_vm] Fit OK for {fit_name}: "
+            f"chi2/ndf = {chi2:.1f}/{int(ndf) if ndf else 0}"
+        )
+    else:
+        print(
+            f"[double_vm] Fit returned status {status} for {fit_name}: "
+            f"chi2/ndf = {chi2:.1f}/{int(ndf) if ndf else 0}"
+        )
+    return fit, chi2, ndf, status, fit_status
 
 def is_charged_pdg(pdgid: int) -> bool:
     pdgDB = ROOT.TDatabasePDG.Instance()
